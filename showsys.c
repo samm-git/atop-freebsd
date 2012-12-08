@@ -80,7 +80,9 @@ static const char rcsid[] = "XXXXXX";
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <termio.h>
+#ifdef linux
+    #include <termio.h>
+#endif
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -993,7 +995,12 @@ char *
 sysprt_MEMDIRTY(void *p, void *notused, int badness, int *color) 
 {
         struct sstat *sstat=p;
+#ifdef linux
         static char buf[16] = "dirty ";
+#elif defined(FREEBSD)
+        static char buf[16] = "inact ";
+#endif
+
         val2memstr(sstat->mem.cachedrt   * pagesize, buf+6, MBFORMAT, 0, 0);
 
         return buf;
@@ -1005,7 +1012,11 @@ char *
 sysprt_MEMBUFFER(void *p, void *notused, int badness, int *color) 
 {
         struct sstat *sstat=p;
+#ifdef linux
         static char buf[16]="buff  ";
+#elif defined(FREEBSD)
+        static char buf[16]="wired ";
+#endif
 	*color = -1;
         val2memstr(sstat->mem.buffermem   * pagesize, buf+6, MBFORMAT, 0, 0);
         return buf;
@@ -1017,7 +1028,11 @@ char *
 sysprt_MEMSLAB(void *p, void *notused, int badness, int *color) 
 {
         struct sstat *sstat=p;
+#ifdef linux
         static char buf[16]="slab  ";
+#elif defined(FREEBSD)
+        static char buf[16]="activ ";
+#endif
 	*color = -1;
         val2memstr(sstat->mem.slabmem   * pagesize, buf+6, MBFORMAT, 0, 0);
         return buf;
@@ -1217,8 +1232,14 @@ sysprt_DSKBUSY(void *p, void *q, int badness, int *color)
 
 	*color = -1;
 
+#ifdef linux
         sprintf(buf+5,"%6.0lf%%", 
-                   (as->perdsk[as->index].io_ms * 100.0 / as->mstot));
+                   (as->perdsk[as->index].io_ms * 100.0 / as->mstot)); 
+#elif defined(FREEBSD)
+/* we already have normalized value */
+        sprintf(buf+5,"%6.0lf%%", 
+                   (double)as->perdsk[as->index].busy_pct); 
+#endif
         return buf;
 }
 
@@ -1315,9 +1336,12 @@ sysprt_DSKAVQUEUE(void *p, void *q, int badness, int *color)
         extraparam	*as=q;
         static char	buf[16]="avq  ";
 	struct perdsk 	*dp = &(as->perdsk[as->index]);
-
+#ifdef linux
 	sprintf(buf+4, "%8.2f", dp->io_ms  ?
                                 (double)dp->avque / dp->io_ms : 0.0);
+#elif defined(FREEBSD)
+	sprintf(buf+4, "%8.2f", (double)dp->avque);
+#endif
         return buf;
 }
 
@@ -1328,8 +1352,12 @@ sysprt_DSKAVIO(void *p, void *q, int badness, int *color)
 {
         extraparam	*as=q;
         static char	buf[16]="avio  ";
+#ifdef linux
         double 		tim= as->iotot ? 
-                     	 (double)(as->perdsk[as->index].io_ms) / as->iotot : 0;
+                       	 (double)(as->perdsk[as->index].io_ms) / as->iotot : 0;
+#elif defined(FREEBSD)
+ 	double	tim = (double)as->perdsk[as->index].io_ms / 1000;
+#endif
 
 	*color = -1;
 
