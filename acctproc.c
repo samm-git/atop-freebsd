@@ -154,7 +154,8 @@ struct pacctadm {
 	struct stat	stat;
 } pacctadm[] = {
 	{ "/var/log/pacct",		{0, }, },
-	{ "/var/account/pacct",		{0, }, }
+	{ "/var/account/pacct",		{0, }, },
+	{ "/var/account/acct",		{0, }, } /* FreeBSD default accounting file */
 };
 
 /*
@@ -626,16 +627,28 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			api->gen.pid    = 0;
 			api->gen.tgid   = 0;
 			api->gen.ppid   = 0;
+#ifdef linux
 			api->gen.excode = acctrec.ac_exitcode;
 			api->gen.ruid   = acctrec.ac_uid16;
 			api->gen.rgid   = acctrec.ac_gid16;
-			api->gen.btime  = acctrec.ac_btime;
-			api->gen.elaps  = acctrec.ac_etime;
 			api->cpu.stime  = acctexp(acctrec.ac_stime);
 			api->cpu.utime  = acctexp(acctrec.ac_utime);
 			api->mem.minflt = acctexp(acctrec.ac_minflt);
 			api->mem.majflt = acctexp(acctrec.ac_majflt);
 			api->dsk.rio    = acctexp(acctrec.ac_rw);
+#elif defined(FREEBSD)
+			api->gen.excode = 0;
+			api->gen.ruid   = acctrec.ac_uid;
+			api->gen.rgid   = acctrec.ac_gid;
+			api->cpu.stime  = acctexp(acctrec.ac_stime/10000); // ms
+			api->cpu.utime  = acctexp(acctrec.ac_utime/10000); // ms
+			api->mem.minflt = 0;
+			api->mem.majflt = 0;
+			api->dsk.rio    = 0; // acctrec.ac_io works buggy
+			api->dsk.wio    = 0; 
+#endif
+			api->gen.btime  = acctrec.ac_btime;
+			api->gen.elaps  = acctrec.ac_etime;
 
 			strcpy(api->gen.name, acctrec.ac_comm);
 			break;
