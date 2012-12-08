@@ -531,7 +531,7 @@ getboot(void)
 {
 	static unsigned long long	boottime;
 	unsigned long long		getbootlinux(long);
-
+	unsigned long long		getbootbsd(long);
 	if (!boottime)		/* do this only once */
 #ifdef linux
 		boottime = getbootlinux(hertz);

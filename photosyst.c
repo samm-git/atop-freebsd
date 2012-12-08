@@ -1879,7 +1879,7 @@ isdisk(unsigned int major, unsigned int minor,
 
 	return NONTYPE;
 }
-
+#endif
 #ifdef linux
 /*
 ** LINUX SPECIFIC:
@@ -1960,7 +1960,7 @@ getbootbsd(long hertz)
     size = sizeof(boottime);
 
     if (sysctl(mib, 2, &boottime, &size, NULL, 0) != -1)
-        (long long)uptime = boottime.tv_sec;
+        uptime = (long long)boottime.tv_sec;
     return uptime;
 }
 #endif

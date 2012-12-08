@@ -101,6 +101,10 @@ netatop_probe(void)
 	if (netsock == -1)
 		return;
 
+#ifdef FREEBSD // hack
+	return;
+#endif
+#ifdef linux // SOL_IP is linux specific
 	/*
 	** probe if the netatop module is active
 	*/
@@ -110,7 +114,7 @@ netatop_probe(void)
 		supportflags &= ~NETATOPD;
 		return;
 	}
-
+#endif
 	// set appropriate support flag
 	supportflags |= NETATOP;
 
@@ -236,7 +240,7 @@ netatop_gettask(pid_t id, char type, struct tstat *tp)
 		memset(&tp->net, 0, sizeof tp->net);
 		return;
 	}
-
+#ifdef linux
 	/*
  	** get statistics of this process/thread
 	*/
@@ -276,6 +280,7 @@ netatop_gettask(pid_t id, char type, struct tstat *tp)
 	tp->net.udprcv = npt.tc.udprcvpacks;
 	tp->net.udpssz = npt.tc.udpsndbytes;
 	tp->net.udprsz = npt.tc.udprcvbytes;
+#endif
 }
 
 /*
@@ -292,7 +297,7 @@ netatop_exitstore(void)
 	unsigned char		databuf[nahp->ntplen];
 	struct netpertask	*tmp = (struct netpertask *)databuf;
 	struct exitstore	*esp;
-
+#ifdef linux
         regainrootprivs();
 
 	/*
@@ -413,7 +418,7 @@ netatop_exitstore(void)
 	}
 
 	exitnum = nr;
-
+#endif
 	return nr;
 }
 

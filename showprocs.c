@@ -526,7 +526,7 @@ proc_printdef procprt_PPID =
 
 /***************************************************************/
 char *
-procprt_JID_a(struct pstat *curstat, int avgval, int nsecs)
+procprt_JID_a(struct tstat *curstat, int avgval, int nsecs)
 {
      static char buf[10];
 
@@ -536,7 +536,7 @@ procprt_JID_a(struct pstat *curstat, int avgval, int nsecs)
 
 
 char *
-procprt_JID_e(struct pstat *curstat, int avgval, int nsecs)
+procprt_JID_e(struct tstat *curstat, int avgval, int nsecs)
 {
      return "     ";
 }

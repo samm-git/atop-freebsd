@@ -182,6 +182,7 @@ static const char rcsid[] = "$Id: deviate.c,v 1.45 2010/10/23 14:02:03 gerlof Ex
 #include <limits.h>
 #include <memory.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "atop.h"
 #include "ifprop.h"

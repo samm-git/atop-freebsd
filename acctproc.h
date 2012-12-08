@@ -27,7 +27,6 @@ int 	acctprocnt(void);
 int 	acctphotoproc(struct tstat *, int);
 void 	acctrepos(unsigned int);
 
-#ifdef linux
 /*
 ** maximum number of records to be read from process accounting file
 ** for one sample, to avoid that atop explodes and introduces OOM killing ....
@@ -35,12 +34,12 @@ void 	acctrepos(unsigned int);
 ** the maximum is based on a limit of 50 MiB extra memory (approx. 70000 procs)
 */
 #define MAXACCTPROCS	(50*1024*1024/sizeof(struct tstat))
-
 /*
 ** preferred maximum size of process accounting file (200 MiB)
 */
 #define ACCTMAXFILESZ	(200*1024*1024)
 
+#ifdef linux
 /*
 ** alternative layout of accounting record if kernel-patch
 ** has been installed
