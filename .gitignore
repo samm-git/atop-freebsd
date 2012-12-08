@@ -15,3 +15,7 @@
 *.exe
 *.out
 *.app
+
+# atop binary
+atop
+atopsar
