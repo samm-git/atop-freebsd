@@ -238,7 +238,7 @@ parseout(time_t curtime, int numsecs,
 			snprintf(header, sizeof header, "%s %s %ld %s %s %d",
 				labeldef[i].label,
 				utsname.nodename,
-				curtime,
+				(long int)curtime,
 				datestr, timestr, numsecs);
 
 			/*
@@ -525,7 +525,7 @@ print_PRG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->gen.tgid,
 				ps->gen.nthr,
 				ps->gen.excode,
-				ps->gen.btime,
+				(long int)ps->gen.btime,
 				ps->gen.cmdline,
 				ps->gen.ppid,
 				ps->gen.nthrrun,
@@ -537,7 +537,7 @@ print_PRG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->gen.sgid,
 				ps->gen.fsuid,
 				ps->gen.fsgid,
-				ps->gen.elaps,
+				(long int)ps->gen.elaps,
 				ps->gen.isproc ? 'y':'n');
 	}
 }
