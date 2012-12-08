@@ -145,6 +145,13 @@ static const char rcsid[] = "$Id: photoproc.c,v 1.33 2010/04/23 12:19:35 gerlof 
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#ifdef FREEBSD 
+ #include <kvm.h>
+ #include <sys/sysctl.h>
+ #include <sys/user.h>
+ extern  kvm_t *kd;
+ extern char	filterkernel;
+#endif
 
 #include "atop.h"
 #include "photoproc.h"
@@ -369,10 +376,10 @@ unsigned int
 countprocs(void)
 {
 	unsigned int	nr=0;
+#ifdef linux
 	DIR		*dirp;
 	struct dirent	*entp;
 	char		origdir[1024];
-
 	if ( getcwd(origdir, sizeof origdir) == NULL)
 		cleanstop(53);
 
@@ -394,7 +401,22 @@ countprocs(void)
 
 	if ( chdir(origdir) == -1)
 		cleanstop(53);
-
+#elif defined(FREEBSD)
+	int nproc_all = 0, i = 0;
+	struct kinfo_proc *pbase;
+	/* 
+	** Result of the function is used to (re)allocte memory for the proc
+	** structure.
+	*/
+	pbase = kvm_getprocs(kd, KERN_PROC_PROC, 0, &nproc_all);
+	for (i = nproc_all; --i >= 0; ++pbase) {
+	    if(pbase->ki_pid)  {
+		if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KTHREAD))) 
+		    continue;
+		nr++;
+	    }
+	}
+#endif
 	return nr;
 }
 
