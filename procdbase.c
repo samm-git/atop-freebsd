@@ -67,7 +67,11 @@ static const char rcsid[] = "$Id: procdbase.c,v 1.8 2010/04/23 12:19:35 gerlof E
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-#include <malloc.h>
+#ifdef linux
+ #include <malloc.h>
+#else /* it is ANSI standard */
+ #include <stdlib.h>
+#endif
 
 #include "atop.h"
 #include "photoproc.h"
