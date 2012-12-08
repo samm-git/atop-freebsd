@@ -117,6 +117,10 @@ static const char rcsid[] = "$Id: various.c,v 1.21 2010/11/12 06:16:16 gerlof Ex
 #include "atop.h"
 #include "acctproc.h"
 
+#ifdef FREEBSD
+    #include <kvm.h>
+    extern  kvm_t *kd;
+#endif
 /*
 ** Function convtime() converts a value (number of seconds since
 ** 1-1-1970) to an ascii-string in the format hh:mm:ss, stored in
@@ -529,8 +533,11 @@ getboot(void)
 	unsigned long long		getbootlinux(long);
 
 	if (!boottime)		/* do this only once */
+#ifdef linux
 		boottime = getbootlinux(hertz);
-
+#elif defined(FREEBSD)
+		boottime = getbootbsd(hertz);
+#endif
 	return boottime;
 }
 
@@ -569,6 +576,10 @@ cleanstop(exitcode)
 	acctswoff();
 	netatop_signoff();
 	(vis.show_end)();
+#ifdef FREEBSD
+	if(kd)
+	    kvm_close(kd);
+#endif
 	exit(exitcode);
 }
 
