@@ -44,6 +44,7 @@ struct tstat {
 		int	egid;		/* eff.  group identification 	*/
 		int	sgid;		/* saved group identification 	*/
 		int	fsgid;		/* fs    group identification 	*/
+		int	jid;		/* jail process identification 	*/
 		int	nthr;		/* number of threads in tgroup 	*/
 		char	name[PNAMLEN+1];/* process name string       	*/
 		char 	isproc;		/* boolean: process level?      */
