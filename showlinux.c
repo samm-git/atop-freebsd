@@ -1017,7 +1017,7 @@ priphead(int curlist, int totlist, char *showtype, char *showorder,
                         "SORTITEM:10 CMD:10", 
                         "built-in netprocs");
 
-#ifdev linux
+#ifdef linux
                 make_proc_prints(varprocs, MAXITEMS,
                         "PID:10 TID:4 PPID:9 RUID:8 RGID:8 EUID:5 EGID:4 "
      			"SUID:3 SGID:2 FSUID:3 FSGID:2 "
