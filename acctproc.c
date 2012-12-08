@@ -115,8 +115,6 @@
 
 static const char rcsid[] = "$Id: acctproc.c,v 1.28 2010/04/23 12:20:19 gerlof Exp $";
 
-#define	_FILE_OFFSET_BITS	64
-
 #include <sys/types.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -147,14 +145,14 @@ static	int   	acctfd = -1;	/* fd of account file       		  */
 static count_t 	acctexp (comp_t  ct);
 static count_t	acctexp2(comp2_t ct);
 static int	acctvers(int);
-static void	acctrestarttrial();
 
 struct pacctadm {
 	char		*name;
 	struct stat	stat;
 } pacctadm[] = {
 	{ "/var/log/pacct",		{0, }, },
-	{ "/var/account/pacct",		{0, }, }
+	{ "/var/account/pacct",		{0, }, },
+	{ "/var/account/acct",		{0, }, } /* FreeBSD default accounting file */
 };
 
 /*
@@ -183,14 +181,6 @@ struct sembuf	semclaim = {0, -1, SEM_UNDO},
 
 /*
 ** switch on the process-accounting mechanism
-**
-** return value:
-**    0 -     activated (success)
-**    1 - not activated: unreadable accounting file
-**    2 - not activated: empty environment variable ATOPACCT
-**    3 - not activated: no access to semaphore group
-**    4 - not activated: impossible to create own accounting file
-**    5 - not activated: no root privileges
 */
 int
 acctswon(void)
@@ -217,27 +207,35 @@ acctswon(void)
 			/*
 			** open active account file with the specified name
 			*/
-			if (! droprootprivs() )
-				cleanstop(42);
+			seteuid( getuid() );	/* drop setuid-root privs */
 
 			if ( (acctfd = open(ep, O_RDONLY) ) == -1)
-				return 1;
+			{
+				perror("open account-file");
+				fprintf(stderr,
+			                "warning: no process exit detection\n");
+				sleep(3);
+				return 0;
+			}
 
 			if ( !acctvers(acctfd) )
 			{
+				fprintf(stderr,
+               				"warning: no process exit detection\n");
+				sleep(3);
 				(void) close(acctfd);
-				return 1;
+				return 0;
 			}
 
 			supportflags |= ACCTACTIVE;
-			return 0;
+			return 1;
 		}
 		else
 		{
 			/*
 			** no contents
 			*/
-			return 2;
+			return 0;
 		}
 	}
 
@@ -278,16 +276,27 @@ acctswon(void)
 					*/
 					if ( (acctfd = open(pacctadm[i].name,
 							    O_RDONLY) ) == -1)
-						return 1;
+					{
+						perror("open account-file");
+						fprintf(stderr,
+					                "warning: no process "
+							"exit detection\n");
+						sleep(3);
+						return 0;
+					}
 
 					if ( !acctvers(acctfd) )
 					{
+						fprintf(stderr,
+	                				"warning: no process "
+						        "exit detection\n");
+						sleep(3);
 						(void) close(acctfd);
-						return 1;
+						return 0;
 					}
 
 					supportflags |= ACCTACTIVE;
-					return 0;
+					return 1;
 				}
 			}
 		}
@@ -297,23 +306,28 @@ acctswon(void)
 	** process-accounting is not yet switched on in a standard way;
 	** check if another atop has switched on accounting already
 	**
-	** first try to create a semaphore group exclusively; if this succeeds,
-	** this is the first atop-incarnation since boot and the semaphore group
-	** should be initialized`
+	** first try to create a semaphore exclusively; if this succeeds,
+	** this is the first atop-incarnation since boot and the semaphore
+	** should be initialized
 	*/
-	if ( (semid = semget(SEMAKEY, 2, 0600|IPC_CREAT|IPC_EXCL)) >= 0)
+	if ( (semid = semget(SEMAKEY, 2, 0666|IPC_CREAT|IPC_EXCL)) >= 0)
 		(void) semctl(semid, 0, SETALL, arg);
 	else
 		semid = semget(SEMAKEY, 0, 0);
 
 	/*
-	** check if we got access to the semaphore group
+	** check if we got access to the semaphore-group
 	*/
 	if (semid == -1)
-		return 3;
+	{
+		perror("open semaphore-group");
+		fprintf(stderr, "warning: no process exit detection\n");
+		sleep(3);
+		return 0;
+	}
 
 	/*
-	** the semaphore group is opened now; claim exclusive rights
+	** the semaphore-group is opened now; claim exclusive rights
 	*/
 	(void) semop(semid, &semclaim, 1);
 
@@ -342,8 +356,14 @@ acctswon(void)
 				/*
 				** persistent failure
 				*/
+				fprintf(stderr,
+					"warning: no process exit detection "
+				        "(can not create directory %s)\n",
+						ACCTDIR);
+
 				(void) semop(semid, &semrelse, 1);
-				return 4;
+				sleep(3);
+				return 0;
 			}
 		}
 
@@ -357,11 +377,20 @@ acctswon(void)
 		*/
 		if ( acct(ACCTDIR "/" ACCTFILE) < 0)
 		{
+			perror("activate process accounting");
+			fprintf(stderr, "warning: no process exit detection");
+
+			if (errno == EPERM)
+				fprintf(stderr, " (not superuser)!\n");
+			else
+				fprintf(stderr, "!\n");
+
 			(void) unlink(ACCTDIR "/" ACCTFILE);
 			(void) rmdir(ACCTDIR);
 			(void) semop(semid, &semrelse, 1);
 
-			return 5;
+			sleep(3);
+			return 0;
 		}
 	}
 
@@ -371,12 +400,17 @@ acctswon(void)
 	*/
 	if ( (acctfd = open(ACCTDIR "/" ACCTFILE, O_RDONLY) ) < 0)
 	{
+		perror("open account-file");
+		fprintf(stderr, "warning: no process exit detection!\n");
+
 		(void) acct(0);
 		(void) unlink(ACCTDIR "/" ACCTFILE);
 		(void) rmdir(ACCTDIR);
 
 		(void) semop(semid, &semrelse, 1);
-		return 1;
+
+		sleep(3);
+		return 0;
 	}
 
 	/*
@@ -406,7 +440,7 @@ acctswon(void)
 	acctvers(acctfd);
 
 	supportflags |= ACCTACTIVE;
-	return 0;
+	return 1;
 }
 
 /*
@@ -419,27 +453,28 @@ acctvers(int fd)
 	struct acct 	tmprec;
 
 	/*
-	** read first record from accounting file to verify
+	** read first record from accouting file to verify
 	** the second byte (always contains version number)
 	*/
 	if ( read(fd, &tmprec, sizeof tmprec) < sizeof tmprec)
 		return 0;
 
-	switch (tmprec.ac_version & 0x0f)
+	switch (tmprec.ac_version)
 	{
-	   case 2:
- 		acctrecsz     = sizeof(struct acct);
-		acctversion   = 2;
-		break;
-
 	   case 3:
 	   	acctrecsz     = sizeof(struct acct_v3);
 		acctversion   = 3;
 		break;
 
+	   case 6:
+	   	acctrecsz     = sizeof(struct acct_atop);
+		acctversion   = 6;
+		supportflags |= PATCHACCT;  
+		break;
+
 	   default:
-		fprintf(stderr, "Unknown format of process accounting file\n");
-		cleanstop(8);
+	   	acctrecsz     = sizeof(struct acct);
+		acctversion   = 2;
 	}
 
 	/*
@@ -450,7 +485,7 @@ acctvers(int fd)
 	/*
 	** reposition to actual file-size
 	*/
-	(void) lseek(fd, acctsize, SEEK_SET);
+	(void)lseek(fd, acctsize, SEEK_SET);
 
 	return 1;
 }
@@ -512,14 +547,11 @@ acctswoff(void)
 				/*
 				** remove the directory and file
 				*/
-				regainrootprivs(); /* get root privs again */
+				seteuid(0);	/* get root privs again */
 
 				(void) acct(0);
 				(void) unlink(ACCTDIR "/" ACCTFILE);
 				(void) rmdir(ACCTDIR);
-
-				if (! droprootprivs() )
-					cleanstop(42);
 			}
 		}
 
@@ -559,7 +591,7 @@ acctprocnt(void)
 		/*
 		** reposition to start of file
 		*/
-		(void) lseek(acctfd, 0, SEEK_SET);
+		lseek(acctfd, 0, SEEK_SET);
 		acctsize = 0;
 	}
 
@@ -567,35 +599,14 @@ acctprocnt(void)
 }
 
 /*
-** reposition the seek-offset in the process-account file to skip
-** processes that have not been read
-*/
-void
-acctrepos(unsigned int noverflow)
-{
-	/*
-	** if accounting not supported, skip call
-	*/
-	if (acctfd == -1)
-		return;
-
-	/*
-	** reposition to skip superfluous records
-	*/
-	(void) lseek(acctfd, noverflow * acctrecsz, SEEK_CUR);
-	acctsize   += noverflow * acctrecsz;
-}
-
-
-/*
 ** read process-records from the account-file,
 ** which are written since the previous cycle
 */
 int
-acctphotoproc(struct tstat *accproc, int nrprocs)
+acctphotoproc(struct pstat *accproc, int nrprocs)
 {
 	register int 		nrexit;
-	register struct tstat 	*api;
+	register struct pstat 	*api;
 	struct acct 		acctrec;
 	struct acct_v3 		acctrec_v3;
 	struct acct_atop	acctrec_atop;
@@ -622,20 +633,31 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			*/
 			api->gen.state  = 'E';
 			api->gen.nthr   = 1;
-			api->gen.isproc = 1;
-			api->gen.pid    = 0;
-			api->gen.tgid   = 0;
 			api->gen.ppid   = 0;
+#ifdef linux
 			api->gen.excode = acctrec.ac_exitcode;
 			api->gen.ruid   = acctrec.ac_uid16;
 			api->gen.rgid   = acctrec.ac_gid16;
-			api->gen.btime  = acctrec.ac_btime;
-			api->gen.elaps  = acctrec.ac_etime;
+			api->gen.btime = acctrec.ac_btime;
+			api->gen.elaps = acctrec.ac_etime;
 			api->cpu.stime  = acctexp(acctrec.ac_stime);
 			api->cpu.utime  = acctexp(acctrec.ac_utime);
 			api->mem.minflt = acctexp(acctrec.ac_minflt);
 			api->mem.majflt = acctexp(acctrec.ac_majflt);
 			api->dsk.rio    = acctexp(acctrec.ac_rw);
+#elif defined(FREEBSD)
+			api->gen.excode = 0;
+			api->gen.ruid   = acctrec.ac_uid;
+			api->gen.rgid   = acctrec.ac_gid;
+			api->cpu.stime  = acctexp(acctrec.ac_stime/10000); // ms
+			api->cpu.utime  = acctexp(acctrec.ac_utime/10000); // ms
+			api->mem.minflt = 0;
+			api->mem.majflt = 0;
+			api->dsk.rio    = 0; // acctrec.ac_io works buggy
+			api->dsk.wio    = 0; 
+#endif
+			api->gen.btime  = acctrec.ac_btime;
+			api->gen.elaps  = acctrec.ac_etime;
 
 			strcpy(api->gen.name, acctrec.ac_comm);
 			break;
@@ -649,10 +671,8 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			*/
 			api->gen.state  = 'E';
 			api->gen.pid    = acctrec_v3.ac_pid;
-			api->gen.tgid   = acctrec_v3.ac_pid;
 			api->gen.ppid   = acctrec_v3.ac_ppid;
 			api->gen.nthr   = 1;
-			api->gen.isproc = 1;
 			api->gen.excode = acctrec_v3.ac_exitcode;
 			api->gen.ruid   = acctrec_v3.ac_uid;
 			api->gen.rgid   = acctrec_v3.ac_gid;
@@ -676,10 +696,8 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			*/
 			api->gen.state  = 'E';
 			api->gen.pid    = acctrec_atop.ac_pid;
-			api->gen.tgid   = acctrec_atop.ac_pid;
 			api->gen.ppid   = acctrec_atop.ac_ppid;
 			api->gen.nthr   = 1;
-			api->gen.isproc = 1;
 			api->gen.excode = acctrec_atop.ac_exitcode;
 			api->gen.ruid   = acctrec_atop.ac_uid;
 			api->gen.rgid   = acctrec_atop.ac_gid;
@@ -691,7 +709,6 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			api->mem.majflt = acctexp (acctrec_atop.ac_majflt);
 			api->mem.vmem   = acctexp (acctrec_atop.ac_mem);
 			api->mem.rmem   = acctexp (acctrec_atop.ac_rss);
-			api->mem.vswap  = 0;
 			api->dsk.rio    = acctexp (acctrec_atop.ac_bread);
 			api->dsk.wio    = acctexp (acctrec_atop.ac_bwrite);
 			api->dsk.rsz    = acctexp2(acctrec_atop.ac_dskrsz);
@@ -704,91 +721,16 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			api->net.udprcv = acctexp (acctrec_atop.ac_udprcv);
 			api->net.udpssz = acctexp2(acctrec_atop.ac_udpssz);
 			api->net.udprsz = acctexp2(acctrec_atop.ac_udprsz);
+			api->net.rawsnd = acctexp (acctrec_atop.ac_rawsnd);
+			api->net.rawrcv = acctexp (acctrec_atop.ac_rawrcv);
 
 			strcpy(api->gen.name, acctrec_atop.ac_comm);
 		}
 	}
 
-
 	acctsize += nrexit * acctrecsz;
 
-	if (acctsize > ACCTMAXFILESZ)
-		acctrestarttrial();
-
 	return nrexit;
-}
-
-/*
-** when the size of the accounting file exceeds a certain limit,
-** it might be useful to stop process accounting, truncate the
-** process accounting file to zero and start process accounting
-** again
-**
-** this will only be done if this atop process is the only one
-** that is currently using the accounting file
-*/
-static void
-acctrestarttrial()
-{
-	struct stat 	statacc;
-	int		semid;
-
-	/*
-	** not private accounting-file in use?
-	*/
-	if (!acctatop)
-		return;		// do not restart
-
-	/*
-	** still remaining records in accounting file that are
-	** written between the moment that the number of exited
-	** processes was counted and the moment that all processes
-	** were read
-	*/
-	(void) fstat(acctfd, &statacc);
-
-	if (acctsize != statacc.st_size)
-		return;		// do not restart
-
-	/*
-	** claim the semaphore to get exclusive rights for
-	** the accounting-manipulation
-	*/
-	semid = semget(SEMAKEY, 0, 0);
-
-	(void) semop(semid, &semclaim, 1);
-
-	/*
-	** check if there are more users of accounting file
-	*/
-	if (semctl(semid, 1, GETVAL, 0) < SEMTOTAL-1)
-	{
-		(void) semop(semid, &semrelse, 1);
-		return;		// do not restart
-	}
-
-	/*
-	** restart is possible
-	**
-	** - switch off accounting
-	** - truncate the file
-	** - switch on accounting
-	*/
-	regainrootprivs();	// get root privs again 
-
-	(void) acct(0);		// switch off accounting
-
-	if ( truncate(ACCTDIR "/" ACCTFILE, 0) == 0)
-		(void) lseek(acctfd, 0, SEEK_SET);
-
-	(void) acct(ACCTDIR "/" ACCTFILE);
-
-	if (! droprootprivs() )
-		cleanstop(42);
-
-	acctsize = 0;
-
-	(void) semop(semid, &semrelse, 1);
 }
 
 /*

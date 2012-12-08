@@ -14,7 +14,7 @@
 ** Date:        November 1996
 ** LINUX-port:  June 2000
 ** --------------------------------------------------------------------------
-** Copyright (C) 2000-2012 Gerlof Langeveld
+** Copyright (C) 2000-2010 Gerlof Langeveld
 **
 ** This program is free software; you can redistribute it and/or modify it
 ** under the terms of the GNU General Public License as published by the
@@ -67,7 +67,11 @@ static const char rcsid[] = "$Id: procdbase.c,v 1.8 2010/04/23 12:19:35 gerlof E
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-#include <malloc.h>
+#ifdef linux
+ #include <malloc.h>
+#else /* it is ANSI standard */
+ #include <stdlib.h>
+#endif
 
 #include "atop.h"
 #include "photoproc.h"
@@ -90,7 +94,7 @@ static struct pinfo	presidue;
 ** search process database for the given PID
 */
 int
-pdb_gettask(int pid, char isproc, time_t btime, struct pinfo **pinfopp)
+pdb_getproc(int pid, time_t btime, struct pinfo **pinfopp)
 {
 	register struct pinfo	*pp;
 
@@ -105,22 +109,8 @@ pdb_gettask(int pid, char isproc, time_t btime, struct pinfo **pinfopp)
 		** if this is required PID, unchain it from the RESIDUE-list
 		** and return info
 		*/
-		if (pp->tstat.gen.pid    == pid    && 
-		    pp->tstat.gen.isproc == isproc   )
+		if (pp->pstat.gen.pid == pid && pp->pstat.gen.btime == btime)
 		{
-			int diff = pp->tstat.gen.btime - btime;
-
-			/*
-			** with longer intervals, the same PID might be
-			** found more than once, so also check the start
-			** time of the task
-			*/
-			if (diff > 1 || diff < -1)
-			{
-				pp = pp->phnext;
-				continue;
-			}
-
 			if (pp->prnext)		/* if part of RESIDUE-list   */
 			{
 				(pp->prnext)->prprev = pp->prprev; /* unchain */
@@ -148,7 +138,7 @@ pdb_gettask(int pid, char isproc, time_t btime, struct pinfo **pinfopp)
 ** add new process-info structure to the process database
 */
 void
-pdb_addtask(int pid, struct pinfo *pinfop)
+pdb_addproc(int pid, struct pinfo *pinfop)
 {
 	register int i	= pid&(NPHASH-1);
 
@@ -160,7 +150,7 @@ pdb_addtask(int pid, struct pinfo *pinfop)
 ** delete a process from the process database
 */
 int
-pdb_deltask(int pid, char isproc)
+pdb_delproc(int pid)
 {
 	register struct pinfo	*pp, *ppp;
 
@@ -169,7 +159,7 @@ pdb_deltask(int pid, char isproc)
 	/*
 	** check first entry in hash Q
 	*/
-	if (pp->tstat.gen.pid == pid && pp->tstat.gen.isproc == isproc)
+	if (pp->pstat.gen.pid == pid)
 	{
 		phash[pid&(NPHASH-1)] = pp->phnext;
 
@@ -199,7 +189,7 @@ pdb_deltask(int pid, char isproc)
 		** if this is wanted PID, unchain it from the RESIDUE-list
 		** and return info
 		*/
-		if (pp->tstat.gen.pid == pid && pp->tstat.gen.isproc == isproc)
+		if (pp->pstat.gen.pid == pid)
 		{
 			ppp->phnext = pp->phnext;
 
@@ -225,8 +215,19 @@ pdb_deltask(int pid, char isproc)
 }
 
 /*
+** create and initialize process-info
+*/
+int
+pdb_newproc(struct pinfo **pinfopp)
+{
+	*pinfopp = calloc(1, sizeof(struct pinfo));
+	return(1);
+}
+
+
+/*
 ** Chain all process-info structures into the RESIDUE-list;
-** every process-info struct which is referenced later on by pdb_gettask(),
+** every process-info struct which is referenced later on by pdb_getproc(),
 ** will be removed from this list again. After that, the remaining
 ** (unreferred) process-info structs can be easily discovered and
 ** eventually removed.
@@ -281,7 +282,6 @@ pdb_cleanresidue(void)
 {
 	register struct pinfo	*pr;
 	register int		pid;
-        char			isproc;
 
 	/*
 	** start at RESIDUE-list anchor and delete all entries
@@ -290,12 +290,11 @@ pdb_cleanresidue(void)
 
 	while (pr != &presidue)
 	{
-		pid    = pr->tstat.gen.pid;
-		isproc = pr->tstat.gen.isproc;
+		pid = pr->pstat.gen.pid;
 
 		pr  = pr->prnext;	/* MUST be done before deletion */
 
-		pdb_deltask(pid, isproc);
+		pdb_delproc(pid);
 	}
 
 	return(1);
@@ -306,7 +305,7 @@ pdb_cleanresidue(void)
 ** given process-info, for which the PID is not known
 */
 int
-pdb_srchresidue(struct tstat *tstatp, struct pinfo **pinfopp)
+pdb_srchresidue(struct pstat *pstatp, struct pinfo **pinfopp)
 {
 	register struct pinfo	*pr, *prmin=NULL;
 	register long		btimediff;
@@ -322,20 +321,21 @@ pdb_srchresidue(struct tstat *tstatp, struct pinfo **pinfopp)
 		/*
 		** check if this entry matches searched info
 		*/
-		if ( 	pr->tstat.gen.ruid   == tstatp->gen.ruid	&& 
-			pr->tstat.gen.rgid   == tstatp->gen.rgid	&& 
-			strcmp(pr->tstat.gen.name, tstatp->gen.name) == EQ  )
+		if ( 	pr->pstat.gen.ruid   == pstatp->gen.ruid	&& 
+			pr->pstat.gen.rgid   == pstatp->gen.rgid	&& 
+			strcmp(pr->pstat.gen.name, pstatp->gen.name) == EQ  )
 		{
 			/*
 			** check if the start-time of the process is exactly
 			** the same ----> then we have a match;
 			** however sometimes the start-time may deviate a
 			** second although it IS the process we are looking
-			** for (depending on the rounding of the boot-time),
-			** so if we don't find the exact match, we will check
-			** later on if we found an almost-exact match
+			** for (depending on the fact that atop is started
+			** around a second-upgrade in the kernel), so if
+			** we don't find the exact match, we will check later
+			** on if we found an almost-exact match
 			*/
-			btimediff = pr->tstat.gen.btime - tstatp->gen.btime;
+			btimediff = pr->pstat.gen.btime - pstatp->gen.btime;
 
 			if (btimediff == 0)	/* gotcha !! */
 			{

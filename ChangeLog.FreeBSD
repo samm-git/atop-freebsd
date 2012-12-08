@@ -1,0 +1,23 @@
+--- atop-freebsd beta8 (2012-02-21)
+# Added setrlimit to 100Mb (experemental)
+
+--- atop-freebsd beta7 (2011-07-26)
+# Fix compilation error on FreeBSD 7.1 RELEASE
+# Maximum CPU Frequency detection is now more accurate if cpufreq() driver
+  is installed and working. This fixing "99% scaling" bug.
+
+--- atop-freebsd beta6 (2011-07-07)
+! Added README.FreeBSD
++ Added JID keyword to show Jail ID in the FreeBSD. Added JID to the "v" 
+  output and removed useless FSUID/FSGID. This makes database format 
+  incompatible with previous beta :(
+# Fixed bug in original code when getpwent was returning last record
+# Fixed 'atop: sysctl(dev.cpu.0.freq...) failed: Device not configured (6)'
+  message on startup reported by some users.
+
+--- atop-freebsd beta5 (2011-07-05)
+# Fixed possible memory corruption in the photoproc() function caused 
+  many issues
+
+--- atop-freebsd beta4 (2011-07-01)
+! First public beta

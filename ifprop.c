@@ -42,21 +42,75 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
-#include <linux/sockios.h>
-#include <linux/if.h>
-#include <linux/in.h>
 
-typedef __u64	u64;
-typedef __u32	u32;
-typedef __u16	u16;
-typedef __u8	u8;
-#include <linux/ethtool.h>
+#ifdef linux
+ #include <linux/sockios.h>
+ #include <linux/if.h>
+ #include <linux/in.h>
+ #include <linux/ethtool.h>
+ typedef __u64	u64;
+ typedef __u32	u32;
+ typedef __u16	u16;
+ typedef __u8	u8;
+#elif defined(FREEBSD)
+ #include <net/if.h>
+ #include <netinet/in.h>
+ #include <net/if_media.h>
+ #include <net/if_mib.h>
+ #include <sys/types.h>
+ #include <sys/types.h>
+ #include <sys/sysctl.h>
+ #define __u16 uint16_t
+ #define __u8 uint8_t
+ #define __u32 uint32_t
+ #define __64 uint64_t
+#endif
+
 
 #include "atop.h"
 #include "ifprop.h"
 #include "photosyst.h"
 
 static struct ifprop	ifprops[MAXINTF];
+
+#ifdef FREEBSD
+/*
+** functtion return media speed based on interface media flag
+**
+*/
+static int link_speed(int active) {
+
+    switch (IFM_SUBTYPE(active)) {
+
+    case IFM_10_T:
+    case IFM_10_2:
+    case IFM_10_5:
+    case IFM_10_STP:
+    case IFM_10_FL:
+        return (10);
+    case IFM_100_TX:
+    case IFM_100_FX:
+    case IFM_100_T4:
+    case IFM_100_VG:
+    case IFM_100_T2:
+        return (100);
+    case IFM_1000_SX:
+    case IFM_1000_LX:
+    case IFM_1000_CX:
+    case IFM_1000_T:
+        return (1000);
+    case IFM_HPNA_1:
+    case 0: /* unknown speed */
+        return (0);
+    default:
+        /* assume that new defined types are going to be at least 10GigE */
+    case IFM_10G_SR:
+    case IFM_10G_LR:
+        return (10000);
+    }
+}
+
+#endif
 
 /*
 ** function searches for the properties of a particular interface
@@ -94,6 +148,7 @@ getifprop(struct ifprop *ifp)
 void
 initifprop(void)
 {
+	#ifdef linux
 	FILE 			*fp;
 	char 			*cp, linebuf[2048];
 	int			i=0, sockfd;
@@ -180,4 +235,54 @@ initifprop(void)
 
 	close(sockfd);
 	fclose(fp);
+	#endif
+	#ifdef FREEBSD
+	/**
+	** On FreeBSD we are using IFMIB_IFDATA sysctl to get interface list
+	** and SIOCGIFMEDIA ioctl for the media information
+	**/
+	struct ifmediareq ifmr;
+	int i = 0, sockfd = 0;
+	int ifcount = 0, curint = 0;
+	size_t len = 4;
+	struct ifmibdata ifmd;
+    
+	if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+	{
+		return;
+	}
+	if (sysctlbyname("net.link.generic.system.ifcount", &ifcount,
+	    &len, NULL, 0) == -1) {
+	    return;
+	}
+	int name[6];
+	for (i = 1; i <= ifcount; i++){
+	    name[0] = CTL_NET;
+	    name[1] = PF_LINK;
+	    name[2] = NETLINK_GENERIC;
+	    name[3] = IFMIB_IFDATA;
+	    name[4] = i;
+	    name[5] = IFDATA_GENERAL;
+	    len = sizeof(ifmd);
+	    if(sysctl(name, 6, &ifmd, &len, (void *)0, 0)==0){
+		if(!(ifmd.ifmd_flags & IFF_UP)) 
+		    continue; /* interface is down, ignore */
+		strncpy(ifprops[curint].name, ifmd.ifmd_name, sizeof((struct perintf *)NULL)->name - 1);
+		bzero(&ifmr, sizeof(ifmr));
+		strlcpy(ifmr.ifm_name, ifmd.ifmd_name, IFNAMSIZ);
+		if (!ioctl(sockfd, SIOCGIFMEDIA, (caddr_t) &ifmr)) {
+		    ifprops[curint].speed=link_speed(ifmr.ifm_active);
+		    if(ifmr.ifm_active & IFM_FDX) 
+			ifprops[curint].fullduplex	= 1;
+		    else 
+			ifprops[curint].fullduplex	= 0;
+		}
+		if (++curint >= MAXINTF-1)
+		    break;
+
+	    }
+	}
+	close(sockfd);
+
+#endif /* FREEBSD */
 }

@@ -1,19 +1,10 @@
 #!/bin/sh
 #
-# atop		Startup script for the Atop process logging in background
+# atop		This shell script takes care of initializing atop
 #
 # chkconfig: 2345 85 15
-# description: Advanced system and process activity monitor
+# description:	Atop is a system and process activity monitor
 #
-### BEGIN INIT INFO
-# Provides:             atop
-# Required-Start:	$local_fs
-# Required-Stop:	$local_fs
-# Default-Start:	2 3 4 5
-# Default-Stop:		0 1 6
-# Short-Description: Advanced system and process activity monitor
-# Description: Advanced system and process activity monitor
-### END INIT INFO
 
 # Check existance of binaries 
 [ -f /usr/bin/atop ] || exit 0
@@ -33,7 +24,6 @@ case "$1" in
 		# Start atop
 		/etc/atop/atop.daily
 	fi
-	touch /var/lock/subsys/atop
 	;;
 
   stop)
@@ -59,7 +49,6 @@ case "$1" in
 
 		rm $PIDFILE
 	fi
-	rm /var/lock/subsys/atop
 	;;
 
   status)

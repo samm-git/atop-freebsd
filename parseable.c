@@ -106,7 +106,7 @@ void 	print_PRN();
 struct labeldef {
 	char	*label;
 	int	valid;
-	void	(*prifunc)(char *, struct sstat *, struct tstat *, int);
+	void	(*prifunc)(char *, struct sstat *, struct pstat *, int);
 };
 
 static struct labeldef	labeldef[] = {
@@ -208,10 +208,9 @@ parsedef(char *pd)
 */
 char
 parseout(time_t curtime, int numsecs,
-	 struct sstat *ss, struct tstat *ts, struct tstat **proclist,
-	 int ndeviat, int ntask, int nactproc,
-         int totproc, int totrun, int totslpi, int totslpu, int totzomb,
-	 int nexit, unsigned int noverflow, char flag)
+	 struct sstat *ss, struct pstat *ps,
+	 int nlist, int npresent, int trun, int tslpi, int tslpu, int nzombie,
+	 int nexit, char flag)
 {
 	register int	i;
 	char		datestr[32], timestr[32], header[256];
@@ -238,13 +237,13 @@ parseout(time_t curtime, int numsecs,
 			snprintf(header, sizeof header, "%s %s %ld %s %s %d",
 				labeldef[i].label,
 				utsname.nodename,
-				curtime,
+				(long int)curtime,
 				datestr, timestr, numsecs);
 
 			/*
 			** call a selected print-function
 			*/
-			(labeldef[i].prifunc)(header, ss, ts, ndeviat);
+			(labeldef[i].prifunc)(header, ss, ps, nlist);
 		}
 	}
 
@@ -288,7 +287,7 @@ calc_freqscale(count_t maxfreq, count_t cnt, count_t ticks,
 
 
 void
-print_CPU(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_CPU(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
         count_t maxfreq=0;
         count_t cnt=0;
@@ -325,7 +324,7 @@ print_CPU(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_cpu(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_cpu(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int i;
         count_t maxfreq=0;
@@ -360,7 +359,7 @@ print_cpu(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_CPL(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_CPL(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	printf("%s %lld %.2f %.2f %.2f %lld %lld\n",
 			hp,
@@ -373,9 +372,9 @@ print_CPL(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_MEM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_MEM(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
-	printf(	"%s %u %lld %lld %lld %lld %lld %lld %lld\n",
+	printf(	"%s %u %lld %lld %lld %lld %lld %lld\n",
 			hp,
 			pagesize,
 			ss->mem.physmem,
@@ -383,12 +382,11 @@ print_MEM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 			ss->mem.cachemem,
 			ss->mem.buffermem,
 			ss->mem.slabmem,
-			ss->mem.cachedrt,
-			ss->mem.slabreclaim);
+			ss->mem.cachedrt);
 }
 
 void
-print_SWP(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_SWP(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	printf(	"%s %u %lld %lld %lld %lld %lld\n",
 			hp,
@@ -401,7 +399,7 @@ print_SWP(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_PAG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_PAG(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	printf(	"%s %u %lld %lld %lld %lld %lld\n",
 			hp,
@@ -414,7 +412,7 @@ print_PAG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_LVM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_LVM(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int	i;
 
@@ -432,7 +430,7 @@ print_LVM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_MDD(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_MDD(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int	i;
 
@@ -450,7 +448,7 @@ print_MDD(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_DSK(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_DSK(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int	i;
 
@@ -468,7 +466,7 @@ print_DSK(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
-print_NET(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_NET(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int 	i;
 
@@ -508,24 +506,24 @@ print_NET(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 ** print functions for process-level statistics
 */
 void
-print_PRG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_PRG(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int i;
 
 	for (i=0; i < nact; i++, ps++)
 	{
 		printf("%s %d (%s) %c %d %d %d %d %d %ld (%s) %d %d %d %d "
- 		       "%d %d %d %d %d %d %ld %c\n",
+ 		       "%d %d %d %d %d %d %ld\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
 				ps->gen.state,
 				ps->gen.ruid,
 				ps->gen.rgid,
-				ps->gen.tgid,
+				ps->gen.pid,	/* was TGID formerly */
 				ps->gen.nthr,
 				ps->gen.excode,
-				ps->gen.btime,
+				(long int)ps->gen.btime,
 				ps->gen.cmdline,
 				ps->gen.ppid,
 				ps->gen.nthrrun,
@@ -537,19 +535,18 @@ print_PRG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->gen.sgid,
 				ps->gen.fsuid,
 				ps->gen.fsgid,
-				ps->gen.elaps,
-				ps->gen.isproc ? 'y':'n');
+				(long int)ps->gen.elaps);
 	}
 }
 
 void
-print_PRC(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_PRC(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int i;
 
 	for (i=0; i < nact; i++, ps++)
 	{
-		printf("%s %d (%s) %c %u %lld %lld %d %d %d %d %d %d %d %c\n",
+		printf("%s %d (%s) %c %u %lld %lld %d %d %d %d %d %d\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
@@ -562,21 +559,18 @@ print_PRC(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->cpu.rtprio,
 				ps->cpu.policy,
 				ps->cpu.curcpu,
-				ps->cpu.sleepavg,
-				ps->gen.tgid,
-				ps->gen.isproc ? 'y':'n');
+				ps->cpu.sleepavg);
 	}
 }
 
 void
-print_PRM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_PRM(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int i;
 
 	for (i=0; i < nact; i++, ps++)
 	{
-		printf("%s %d (%s) %c %u %lld %lld %lld %lld %lld %lld "
-		       "%lld %lld %lld %lld %lld %d %c\n",
+		printf("%s %d (%s) %c %u %lld %lld %lld %lld %lld %lld %lld\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
@@ -584,60 +578,56 @@ print_PRM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				pagesize,
 				ps->mem.vmem,
 				ps->mem.rmem,
-				ps->mem.vexec,
+				ps->mem.shtext,
 				ps->mem.vgrow,
 				ps->mem.rgrow,
 				ps->mem.minflt,
-				ps->mem.majflt,
-				ps->mem.vlibs,
-				ps->mem.vdata,
-				ps->mem.vstack,
-				ps->mem.vswap,
-				ps->gen.tgid,
-				ps->gen.isproc ? 'y':'n');
+				ps->mem.majflt);
 	}
 }
 
 void
-print_PRD(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_PRD(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int i;
 
 	for (i=0; i < nact; i++, ps++)
 	{
-		printf("%s %d (%s) %c %c %c %lld %lld %lld %lld %lld %dn %c\n",
+		printf("%s %d (%s) %c %c %c %lld %lld %lld %lld %lld\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
 				ps->gen.state,
-				'n',
+				supportflags & PATCHSTAT ? 'y' : 'n',
 				supportflags & IOSTAT ? 'y' : 'n',
 				ps->dsk.rio, ps->dsk.rsz,
-				ps->dsk.wio, ps->dsk.wsz, ps->dsk.cwsz,
-				ps->gen.tgid,
-				ps->gen.isproc ? 'y':'n');
+				ps->dsk.wio, ps->dsk.wsz, ps->dsk.cwsz);
 	}
 }
 
 void
-print_PRN(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+print_PRN(char *hp, struct sstat *ss, struct pstat *ps, int nact)
 {
 	register int i;
 
 	for (i=0; i < nact; i++, ps++)
 	{
 		printf("%s %d (%s) %c %c %lld %lld %lld %lld %lld %lld "
-		       "%lld %lld %d %d %d %c\n",
+		       "%lld %lld %lld %lld\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
 				ps->gen.state,
-				supportflags & NETATOP ? 'y' : 'n',
-				ps->net.tcpsnd, ps->net.tcpssz,
-				ps->net.tcprcv, ps->net.tcprsz,
-				ps->net.udpsnd, ps->net.udpssz,
-				ps->net.udprcv, ps->net.udprsz,
-				0,              0,
-				ps->gen.tgid,   ps->gen.isproc ? 'y':'n');
+				supportflags & PATCHSTAT ? 'y' : 'n',
+				ps->net.tcpsnd,
+				ps->net.tcpssz,
+				ps->net.tcprcv,
+				ps->net.tcprsz,
+				ps->net.udpsnd,
+				ps->net.udpssz,
+				ps->net.udprcv,
+				ps->net.udprsz,
+				ps->net.rawsnd,
+				ps->net.rawrcv);
 	}
 }

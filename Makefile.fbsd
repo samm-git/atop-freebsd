@@ -1,7 +1,8 @@
-# Makefile for System & Process Monitor ATOP (Linux version)
+# Makefile for System & Process Monitor ATOP (FreeBSD version)
 #
 # Gerlof Langeveld - gerlof.langeveld@atoptool.nl
-#
+# Alex Samorukov - samm@os2.kiev.ua
+
 DESTDIR  =
 
 BINPATH  = /usr/bin
@@ -14,9 +15,10 @@ CRNPATH  = /etc/cron.d
 ROTPATH  = /etc/logrotate.d
 PMPATH1  = /usr/lib/pm-utils/sleep.d
 PMPATH2  = /usr/lib64/pm-utils/sleep.d
+VERSION  = atop-1.26.fbsd.beta8
 
-CFLAGS  += -O2 -I. -Wall	 # -DHTTPSTATS
-LDFLAGS += -lncurses -lm -lz
+CFLAGS  += -Wall -DFREEBSD	 # -DHTTPSTATS 
+LDFLAGS += -lncurses -lm -lz -lkvm -ldevstat
 OBJMOD0  = version.o
 OBJMOD1  = various.o  deviate.o   procdbase.o
 OBJMOD2  = acctproc.o photoproc.o photosyst.o  rawlog.o ifprop.o parseable.o
@@ -32,7 +34,7 @@ atop:		atop.o    $(ALLMODS) Makefile
 		$(CC) atop.o $(ALLMODS) -o atop $(LDFLAGS)
 
 clean:
-		rm -f *.o
+		rm -f *.o atop *.core
 
 install:	atop
 		if [ ! -d $(DESTDIR)$(LOGPATH) ]; 	\
@@ -76,8 +78,21 @@ install:	atop
 		touch          	  	$(DESTDIR)$(LOGPATH)/dummy_before
 		touch            	$(DESTDIR)$(LOGPATH)/dummy_after
 		if [ -z "$(DESTDIR)" ]; then /sbin/chkconfig --add atop; fi
-distr: rm -f *.o
-		tar czvf /tmp/atop.tar.gz *
+dist: clean
+		mkdir -p dist/$(VERSION)
+		cp acctproc.c acctproc.h atop.c atop.h atopsar.c deviate.c \
+		    ifprop.c ifprop.h netstats.h parseable.c parseable.h \
+		    photoproc.c photoproc.h photosyst.c photosyst.h procdbase.c \
+		    rawlog.c showgeneric.c showgeneric.h showlinux.c showlinux.h \
+		    showprocs.c showsys.c various.c version.c \
+		    AUTHOR COPYING ChangeLog Makefile Makefile.fbsd README \
+		    ChangeLog.FreeBSD README.FreeBSD \
+		    atop.cron atop.daily atop.init psaccs_atop psaccu_atop \
+		    dist/$(VERSION)
+		cp -r man dist/$(VERSION)
+		cd dist && tar -cvjf $(VERSION).tar.bz2 $(VERSION)
+		rm -rf dist/$(VERSION)
+		
 ##########################################################################
 
 atop.o:		atop.h	photoproc.h photosyst.h  acctproc.h showgeneric.h

@@ -268,7 +268,9 @@ static const char rcsid[] = "$Id: showgeneric.c,v 1.71 2010/10/25 19:08:32 gerlo
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
-#include <termio.h>
+#ifdef linux
+ #include <termio.h>
+#endif
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -282,13 +284,12 @@ static const char rcsid[] = "$Id: showgeneric.c,v 1.71 2010/10/25 19:08:32 gerlo
 #include "showgeneric.h"
 #include "showlinux.h"
 
-static struct pselection procsel = {"", {USERSTUB, }, "", 0, { 0, }};
-static struct sselection syssel;
+struct selection procsel = {"", {USERSTUB, }, "", 0, { 0, }};
 
 static void	showhelp(int);
 static int	paused;     	/* boolean: currently in pause-mode     */
 static int	fixedhead;	/* boolean: fixate header-lines         */
-static int	sysnosort;	/* boolean: suppress sort of resources  */
+static int	usecolors=1;	/* boolean: colors for high occupation	*/
 static int	avgval;		/* boolean: average values i.s.o. total */
 
 static char	showtype  = MPROCGEN;
@@ -300,12 +301,10 @@ static int	maxmddlines = 999;  /* maximum MDD       lines          */
 static int	maxlvmlines = 999;  /* maximum LVM       lines          */
 static int	maxintlines = 999;  /* maximum interface lines          */
 
-static int	cumusers(struct tstat **, struct tstat *, int);
-static int	cumprocs(struct tstat **, struct tstat *, int);
-static int	procsuppress(struct tstat *, struct pselection *);
+static int	cumusers(struct pstat *, struct pstat *, int);
+static int	cumprocs(struct pstat *, struct pstat *, int);
 static void	limitedlines(void);
 static long	getnumval(char *, long, int);
-static void	generic_init(void);
 
 
 static int	(*procsort[])(const void *, const void *) = {
@@ -317,20 +316,15 @@ static int	(*procsort[])(const void *, const void *) = {
 
 extern proc_printpair ownprocs[];
 
-/*
-** global: incremented by -> key and decremented by <- key
-*/
-int	startoffset;
 
 /*
 ** print the deviation-counters on process- and system-level
 */
 char
 generic_samp(time_t curtime, int nsecs,
-           struct sstat *sstat, struct tstat *tstat, struct tstat **proclist,
-           int ndeviat, int ntask, int nactproc,
-           int totproc, int totrun, int totslpi, int totslpu, int totzomb,
-           int nexit, unsigned int noverflow, char flag)
+           struct sstat *sstat, struct pstat *pstat,
+           int nact, int nproc, int ntrun, int ntslpi, int ntslpu, int nzomb,
+           int nexit, char flag)
 {
 	static int	callnr = 0;
 
@@ -338,77 +332,202 @@ generic_samp(time_t curtime, int nsecs,
 	int		firstproc = 0, plistsz, alistsz, killpid, killsig;
 	int		lastchar;
 	char		format1[16], format2[16], hhmm[16];
-	char		*statmsg = NULL, statbuf[80];
-	char		 *lastsortp, curorder, autoorder;
+	char		*statmsg = NULL, lastorder=0, curorder, autoorder;
 	char		buf[33];
 	struct passwd 	*pwd;
 	struct syscap	syscap;
 
-	/*
-	** curlist points to the active list of tstat-pointers that
-	** should be displayed; nlist indicates the number of entries in
-	** this list
-	*/
-	struct tstat	**curlist;
-	int		nlist;
+	struct selection 	*cursel  = &procsel;
+	static struct selection emptysel = {"", {USERSTUB, }, "", 0, { 0, }};
 
-	/*
-	** tXcumlist is a list of tstat-structs holding one entry
-	** per accumulated (per user or per program) group of processes
-	**
-	** Xcumlist contains the pointers to all structs in tXcumlist
-	**
-	** 
-	** these lists will only be allocated 'lazy' whenever accumulation
-	** is requested
-	*/
-	struct tstat	*tpcumlist = 0;
-	struct tstat	**pcumlist = 0;
-	int		npcum      = 0;
-	char		plastorder = 0;
+	struct pstat	*save_pstat = NULL;
+	int		 save_nact = 0;
 
-	struct tstat	*tucumlist = 0;
-	struct tstat	**ucumlist = 0;
-	int		nucum      = 0;
-	char		ulastorder = 0;
+	if (callnr == 0)	/* first call ? */
+	{
+		/*
+		** check if default sort order and/or showtype are overruled
+		** by commando-line flags
+		*/
+		for (i=0; flaglist[i]; i++)
+		{
+			switch (flaglist[i])
+			{
+			   case MSORTAUTO:
+				showorder = MSORTAUTO;
+				break;
 
-	/*
-	** tsklist contains the pointers to all structs in tstat
-	** (number of entries: ndeviat), sorted on process with the
-	** related threads immediately following the process
-	**
-	** this list will be allocated 'lazy'
-	*/
-	struct tstat	**tsklist  = 0;
-	char		tlastorder = 0;
-	char		zipagain   = 0;
+			   case MSORTCPU:
+				showorder = MSORTCPU;
+				break;
 
-	/*
-	** sellist contains the pointers to the structs in tstat
-	** that are currently selected on basis of a particular
-	** username or program name (both regexp's)
-	**
-	** this list will be allocated 'lazy'
-	*/
-	struct tstat	**sellist  = 0;
-	int		nsel       = 0;
-	char		slastorder = 0;
+			   case MSORTMEM:
+				showorder = MSORTMEM;
+				break;
 
-	char		threadallowed = 0;
+			   case MSORTDSK:
+				showorder = MSORTDSK;
+				break;
 
+			   case MSORTNET:
+				showorder = MSORTNET;
+				break;
 
-	if (callnr == 0)	/* first call? */
-		generic_init();
+			   case MPROCGEN:
+				showtype  = MPROCGEN;
+				showorder = MSORTCPU;
+				break;
+
+			   case MPROCMEM:
+				showtype  = MPROCMEM;
+				showorder = MSORTMEM;
+				break;
+
+			   case MPROCSCH:
+				showtype  = MPROCSCH;
+				showorder = MSORTCPU;
+				break;
+
+			   case MPROCDSK:
+				if ( !(supportflags & (PATCHSTAT|IOSTAT)) )
+				{
+					fprintf(stderr,
+						"No disk-activity figures "
+					        "available; request ignored\n");
+					sleep(3);
+					break;
+				}
+
+				showtype  = MPROCDSK;
+				showorder = MSORTDSK;
+				break;
+
+			   case MPROCNET:
+				if ( !(supportflags & PATCHSTAT) )
+				{
+					fprintf(stderr,
+						"No kernel-patch installed "
+						"(no network-statistics)\n");
+					sleep(3);
+					break;
+				}
+
+				showtype  = MPROCNET;
+				showorder = MSORTNET;
+				break;
+
+			   case MPROCVAR:
+				showtype  = MPROCVAR;
+				break;
+
+			   case MPROCARG:
+				showtype  = MPROCARG;
+				break;
+
+			   case MPROCOWN:
+				showtype  = MPROCOWN;
+				break;
+
+			   case MAVGVAL:
+				if (avgval)
+					avgval=0;
+				else
+					avgval=1;
+				break;
+
+			   case MCUMUSER:
+				showtype  = MCUMUSER;
+				break;
+
+			   case MCUMPROC:
+				showtype  = MCUMPROC;
+				break;
+
+			   case MSYSFIXED:
+				if (fixedhead)
+					fixedhead=0;
+				else
+					fixedhead=1;
+				break;
+
+			   case MCOLORS:
+				if (usecolors)
+					usecolors=0;
+				else
+					usecolors=1;
+				break;
+
+			   case MSYSLIMIT:
+				limitedlines();
+				break;
+
+			   default:
+				prusage("atop");
+			}
+		}
+
+        	/*
+        	** set stdout output on line-basis
+        	*/
+        	setvbuf(stdout, (char *)0, _IOLBF, BUFSIZ);
+
+        	/*
+        	** check if STDOUT is related to a tty or
+        	** something else (file, pipe)
+        	*/
+        	if ( isatty(1) )
+                	screen = 1;
+        	else
+                	screen = 0;
+
+        	/*
+        	** install catch-routine to finish in a controlled way
+		** and activate cbreak-mode
+        	*/
+        	if (screen)
+		{
+			/*
+			** initialize screen-handling via curses
+			*/
+			initscr();
+			cbreak();
+			noecho();
+
+			if (COLS  < 30)
+			{
+				printw("Not enough columns "
+				       "(need at least %d columns)\n", 30);
+				refresh();
+				sleep(3);
+				cleanstop(1);
+			}
+
+			if (has_colors())
+			{
+				use_default_colors();
+				start_color();
+
+				init_pair(COLORLOW,  COLOR_GREEN,  -1);
+				init_pair(COLORMED,  COLOR_CYAN,   -1);
+				init_pair(COLORHIGH, COLOR_RED,    -1);
+			}
+			else
+			{
+				usecolors = 0;
+			}
+		} 
+                signal(SIGINT,   cleanstop);
+                signal(SIGTERM,  cleanstop);
+	}
 
 	callnr++;
-
-	startoffset = 0;
 
 	/*
 	** compute the total capacity of this system for the 
 	** four main resources
 	*/
-	totalcap(&syscap, sstat, proclist, nactproc);
+	totalcap(&syscap, sstat, pstat, nact);
+
 
 	/*
 	** sort per-cpu       		statistics on busy percentage
@@ -417,32 +536,29 @@ generic_samp(time_t curtime, int nsecs,
 	** sort per-disk      		statistics on busy percentage
 	** sort per-interface 		statistics on busy percentage (if known)
 	*/
-	if (!sysnosort)
-	{
-		if (sstat->cpu.nrcpu > 1 && maxcpulines > 0)
-			qsort(sstat->cpu.cpu, sstat->cpu.nrcpu,
+	if (sstat->cpu.nrcpu > 1 && maxcpulines > 0)
+		qsort(sstat->cpu.cpu, sstat->cpu.nrcpu,
 	 	               sizeof sstat->cpu.cpu[0], cpucompar);
 
-		if (sstat->dsk.nlvm > 1 && maxlvmlines > 0)
-			qsort(sstat->dsk.lvm, sstat->dsk.nlvm,
+	if (sstat->dsk.nlvm > 1 && maxlvmlines > 0)
+		qsort(sstat->dsk.lvm, sstat->dsk.nlvm,
 			       sizeof sstat->dsk.lvm[0], diskcompar);
 
-		if (sstat->dsk.nmdd > 1 && maxmddlines > 0)
-			qsort(sstat->dsk.mdd, sstat->dsk.nmdd,
+	if (sstat->dsk.nmdd > 1 && maxmddlines > 0)
+		qsort(sstat->dsk.mdd, sstat->dsk.nmdd,
 			       sizeof sstat->dsk.mdd[0], diskcompar);
 
-		if (sstat->dsk.ndsk > 1 && maxdsklines > 0)
-			qsort(sstat->dsk.dsk, sstat->dsk.ndsk,
+	if (sstat->dsk.ndsk > 1 && maxdsklines > 0)
+		qsort(sstat->dsk.dsk, sstat->dsk.ndsk,
 			       sizeof sstat->dsk.dsk[0], diskcompar);
 
-		if (sstat->intf.nrintf > 1 && maxintlines > 0)
-			qsort(sstat->intf.intf, sstat->intf.nrintf,
+	if (sstat->intf.nrintf > 1 && maxintlines > 0)
+		qsort(sstat->intf.intf, sstat->intf.nrintf,
 		  	       sizeof sstat->intf.intf[0], intfcompar);
-	}
 
 	/*
 	** loop in which the system resources and the list of active
-	** processes are shown; the loop will be preempted by receiving
+	** processes is shown; the loop will be preempted by receiving
 	** a timer-signal or when the trigger-button is pressed.
 	*/
 	while (1)
@@ -468,46 +584,36 @@ generic_samp(time_t curtime, int nsecs,
 
                 int seclen	= val2elapstr(nsecs, buf);
                 int lenavail 	= (screen ? COLS : linelen) -
-						44 - seclen - utsnodenamelen;
+						41 - seclen - utsnodenamelen;
                 int len1	= lenavail / 3;
                 int len2	= lenavail - len1 - len1; 
 
-		printg("ATOP - %s%*s%s  %s%*s%c%c%c%c%c%c%c%c%c%*s%s elapsed", 
+		printg("ATOP - %s%*s%s  %s%*s%c%c%c%c%c%c%*s%s elapsed", 
 			utsname.nodename, len1, "", 
 			format1, format2, len1, "",
-			threadview                      ? 'y' : '-',
 			fixedhead  			? 'f' : '-',
-			sysnosort  			? 'F' : '-',
 			deviatonly 			? '-' : 'a',
 			usecolors  			? '-' : 'x',
 			avgval     			? '1' : '-',
 			procsel.userid[0] != USERSTUB	? 'U' : '-',
-			procsel.prognamesz		? 'P' : '-',
-			syssel.lvmnamesz +
-			syssel.dsknamesz +
-			syssel.itfnamesz		? 'S' : '-',
+			procsel.procnamesz		? 'P' : '-',
 			len2, "", buf);
 
 		if (screen)
+                {
 			attroff(A_REVERSE);
+			attroff(A_REVERSE);
+                }
                 else
+                {
                         printg("\n");
+                }
 
 		/*
 		** print cumulative system- and user-time for all processes
 		*/
-		pricumproc(sstat, proclist, nactproc, ntask,
-			totproc, totrun, totslpi, totslpu, totzomb,
-			nexit, noverflow, avgval, nsecs);
-
-		if (noverflow)
-		{
-			snprintf(statbuf, sizeof statbuf, 
-			         "Only %d exited processes in handled "
-			         "-- %u skipped!", nexit, noverflow);
-			statmsg = statbuf;
-		}
-
+		pricumproc(pstat, sstat, nact, nproc, ntrun, ntslpi, ntslpu,
+					nzomb, nexit, avgval, nsecs);
 		curline=2;
 
 		/*
@@ -519,9 +625,9 @@ generic_samp(time_t curtime, int nsecs,
 			autoorder = showorder;
 
 		curline = prisyst(sstat, curline, nsecs, avgval,
-		                  fixedhead, &syssel, &autoorder,
-		                  maxcpulines, maxdsklines, maxmddlines,
-		                  maxlvmlines, maxintlines);
+				fixedhead, usecolors, &autoorder,
+				maxcpulines, maxdsklines, maxmddlines,
+				maxlvmlines, maxintlines);
 
 		/*
  		** if system-wide statistics do not fit,
@@ -539,7 +645,7 @@ generic_samp(time_t curtime, int nsecs,
 			limitedlines();
 			
 			curline = prisyst(sstat, curline, nsecs, avgval,
-					fixedhead,  &syssel, &autoorder,
+					fixedhead, usecolors, &autoorder,
 					maxcpulines, maxdsklines, maxmddlines,
 					maxlvmlines, maxintlines);
 
@@ -549,19 +655,22 @@ generic_samp(time_t curtime, int nsecs,
 			*/
 			if (curline+2 > LINES)
 			{
-				endwin();	// finish curses interface
+				move(0, 0);
+				clrtobot();
+				move(0, 0);
+				printw("Not enough screen-lines available "
+			           "(need at least %d lines)\n", curline+2);
+				move(1, 0);
+				printw("Please resize window....");
 
-				fprintf(stderr,
-				      "Not enough screen-lines available "
-				      "(need at least %d lines)\n", curline+2);
-				fprintf(stderr, "Please resize window....\n");
-
+				refresh();
+				sleep(4);
 				cleanstop(1);
 			}
 			else
 			{
 				statmsg = "Number of variable resources"
-				          " limited to fit in this window";
+				          " limited to fit number of lines";
 			}
 		}
 
@@ -572,20 +681,14 @@ generic_samp(time_t curtime, int nsecs,
 
 		if (statmsg)
 		{
-			if (screen)
-			{
-				clrtoeol();
-				if (usecolors)
-					attron(COLOR_PAIR(COLORLOW));
-			}
+			clrtoeol();
+			if (usecolors)
+				attron(COLOR_PAIR(COLORLOW));
 
 			printg(statmsg);
 
-			if (screen)
-			{
-				if (usecolors)
-					attroff(COLOR_PAIR(COLORLOW));
-			}
+			if (usecolors)
+				attroff(COLOR_PAIR(COLORLOW));
 
 			statmsg = NULL;
 		}
@@ -597,7 +700,6 @@ generic_samp(time_t curtime, int nsecs,
 				{
 					if (usecolors)
 						attron(COLOR_PAIR(COLORLOW));
-
 					attron(A_BLINK);
 
 					printg("%*s", (COLS-45)/2, " ");
@@ -619,119 +721,52 @@ generic_samp(time_t curtime, int nsecs,
 			}
 		}
 
+		if (screen)
+			plistsz = LINES-curline-2;
+		else
+			plistsz = nact;
+
 		/*
-		** select the required list with tasks to be shown
-		**
-		** if cumulative figures required, accumulate resource
-		** consumption of all processes in the current list
+		** if cumulative figures required, save the current
+		** list of processes and accumulate resource consumption
+		** of all processes in the current list
 		*/
-		switch (showtype)
+		if (showtype == MCUMUSER || showtype == MCUMPROC)
 		{
-		   case MCUMUSER:
-			threadallowed = 0;
-
-			if (ucumlist)	/* list already available? */
-			{
-				curlist   = ucumlist;
-				nlist     = nucum;
-				lastsortp = &ulastorder;
-				break;
-			}
+			/*
+			** remember info based on individual processes
+			*/
+			save_pstat = pstat;
+			save_nact  = nact;
+			cursel 	   = &emptysel;
 
 			/*
 			** allocate space for new (temporary) list with
-			** one entry per user (list has worst-case size)
+			** one entry per user/program (list has worst-case size)
 			*/
-			tucumlist = calloc(sizeof(struct tstat),    nactproc);
-			ucumlist  = malloc(sizeof(struct tstat *) * nactproc);
+			pstat = calloc(sizeof(struct pstat), nact);
 
-			ptrverify(tucumlist,
-			        "Malloc failed for %d ucum procs\n", nactproc);
-			ptrverify(ucumlist,
-			        "Malloc failed for %d ucum ptrs\n",  nactproc);
-
-			for (i=0; i < nactproc; i++)	/* fill pointers */
-				ucumlist[i] = tucumlist+i;
-
-			nucum = cumusers(proclist, tucumlist, nactproc);
-
-			curlist   = ucumlist;
-			nlist     = nucum;
-			lastsortp = &ulastorder;
-			break;
-
-
-		   case MCUMPROC:
-			threadallowed = 0;
-
-			if (pcumlist)	/* list already available? */
+			/*
+			** accumulate all processes
+			** return-value nact contains number of new entries
+			*/ 
+			switch (showtype)
 			{
-				curlist   = pcumlist;
-				nlist     = npcum;
-				lastsortp = &plastorder;
+			   case MCUMUSER:
+				nact = cumusers(save_pstat, pstat, save_nact);
+				break;
+
+			   case MCUMPROC:
+				nact = cumprocs(save_pstat, pstat, save_nact);
 				break;
 			}
 
-			/*
-			** allocate space for new (temporary) list with
-			** one entry per program (list has worst-case size)
-			*/
-			tpcumlist = calloc(sizeof(struct tstat),    nactproc);
-			pcumlist  = malloc(sizeof(struct tstat *) * nactproc);
+			lastorder = 0;	/* force new sort */
 
-			ptrverify(tpcumlist,
-			        "Malloc failed for %d pcum procs\n", nactproc);
-			ptrverify(pcumlist,
-			        "Malloc failed for %d pcum ptrs\n",  nactproc);
-
-			for (i=0; i < nactproc; i++)	/* fill pointers */
-				pcumlist[i] = tpcumlist+i;
-
-			npcum = cumprocs(proclist, tpcumlist, nactproc);
-
-			curlist   = pcumlist;
-			nlist     = npcum;
-			lastsortp = &plastorder;
-			break;
-
-		   default:
-			threadallowed = 1;
-
-			if (procsel.userid[0] ==USERSTUB && !procsel.prognamesz)
-			{	/* no selection wanted */
-				curlist   = proclist;
-				nlist     = nactproc;
-				lastsortp = &tlastorder;
-				break;
-			}
-
-			/*
-			** selection specified for tasks:
-			** create new (worst case) pointer list if needed
-			*/
-			if (!sellist)
-			{
-				sellist = malloc(sizeof(struct tstat *)
-								* nactproc);
-
-				ptrverify(sellist,
-				          "Malloc failed for %d select ptrs\n",
-				          nactproc);
-			}
-
-			for (i=nsel=0; i < nactproc; i++)
-			{
-				if (procsuppress(*(proclist+i), &procsel))
-					continue;
-
-				sellist[nsel++] = proclist[i]; 
-			}
-
-			curlist    = sellist;
-			nlist      = nsel;
-			tlastorder = 0; /* new sort and zip normal view */
-			slastorder = 0;	/* new sort and zip now         */
-			lastsortp  = &slastorder;
+			if (screen)
+				plistsz = LINES-curline-2;
+			else
+				plistsz = nact;
 		}
 
 		/*
@@ -743,88 +778,28 @@ generic_samp(time_t curtime, int nsecs,
 		else
 			curorder = showorder;
 
-		/*
- 		** determine size of list to be displayed
-		*/
-		if (screen)
-			plistsz = LINES-curline-2;
-		else
-			if (threadview && threadallowed)
-				plistsz = ndeviat;
-			else
-				plistsz = nlist;
-
-		if (nlist > 0 && plistsz > 0)
+		if (nact > 0 && plistsz > 0)
 		{
-			/*
- 			** if sorting order is changed, sort again
- 			*/
-			if (*lastsortp != curorder)
+			if (lastorder != curorder)
 			{
-				qsort(curlist, nlist,
-				        sizeof(struct tstat *),
-				        procsort[(int)curorder&0x1f]);
+				qsort(pstat, nact, sizeof(struct pstat),
+						procsort[(int)curorder&0x1f]);
 
-				*lastsortp = curorder;
-
-				zipagain = 1;
+				lastorder = curorder;
 			}
 
-			if (threadview && threadallowed)
-			{
-				int j = ndeviat, t;
-
-				/*
-				** allocate new pointer list to be able to zip
-				** process list with references to the threads
-				*/
-				if (!tsklist)
-				{
-					tsklist = malloc(sizeof(struct tstat *)
-								    * ndeviat);
-
-					ptrverify(tsklist,
-				             "Malloc failed for %d taskptrs\n",
-				             ndeviat);
-
-					zipagain = 1;
-				}
-
-				if (zipagain)
-				{
-					for (i=j=0; i < nlist; i++)
-					{
-						tsklist[j++] = curlist[i];
-
-						for (t = curlist[i] - tstat+1;
-					     	     t < ndeviat &&
-					             (tstat+t)->gen.tgid ==
-					               (curlist[i])->gen.tgid;
-						     t++)
-						{
-							tsklist[j++] = tstat+t;
-						}
-					}
-
-					zipagain = 0;
-				}
-
-				curlist = tsklist;
-				nlist   = j;
-			}
+			if (screen) {
+				attron(A_REVERSE);
+                                move(curline+1, 0);
+                        }
 
 			/*
 			** print the header
 			** first determine the column-header for the current
 			** sorting order of processes
 			*/
-			if (screen) {
-				attron(A_REVERSE);
-                                move(curline+1, 0);
-                        }
-
-			priphead(firstproc/plistsz+1, (nlist-1)/plistsz+1,
-			       		&showtype, &curorder,
+			priphead(firstproc/plistsz+1, (nact-1)/plistsz+1,
+			       		showtype, curorder,
 					showorder == MSORTAUTO ? 1 : 0);
 
 			if (screen)
@@ -836,12 +811,26 @@ generic_samp(time_t curtime, int nsecs,
 			/*
 			** print the list
 			*/
-			priproc(curlist, firstproc, nlist, curline+2,
-			        firstproc/plistsz+1, (nlist-1)/plistsz+1,
-			        showtype, curorder, &syscap, nsecs, avgval);
+			priproc(pstat, firstproc, nact, curline+2,
+			        firstproc/plistsz+1, (nact-1)/plistsz+1,
+			        showtype, curorder, &syscap, cursel,
+				nsecs, avgval);
 		}
 
-		alistsz = nlist;	/* preserve size of active list */
+		alistsz = nact;		/* preserve size of active list */
+
+		/*
+		** if cumulative figures per user shown,
+		** release temporary space and restore per-process values
+		*/
+		if (showtype == MCUMUSER || showtype == MCUMPROC)
+		{
+			free(pstat);
+
+			pstat  = save_pstat;
+			nact   = save_nact;
+			cursel = &procsel;
+		}
 
 		/*
 		** in case of writing to a terminal, the user can also enter
@@ -872,16 +861,6 @@ generic_samp(time_t curtime, int nsecs,
 			   */
 			   case ERR:
 			   case 0:
-				timeout(0);
-				(void) getch();
-				timeout(-1);
-				if (tpcumlist) free(tpcumlist);
-				if (pcumlist)  free(pcumlist);
-				if (tucumlist) free(tucumlist);
-				if (ucumlist)  free(ucumlist);
-				if (tsklist)   free(tsklist);
-				if (sellist)   free(sellist);
-
 				return lastchar;	
 
 			   /*
@@ -901,14 +880,6 @@ generic_samp(time_t curtime, int nsecs,
 					break;
 
 				getalarm(0);
-
-				if (tpcumlist) free(tpcumlist);
-				if (pcumlist)  free(pcumlist);
-				if (tucumlist) free(tucumlist);
-				if (ucumlist)  free(ucumlist);
-				if (tsklist)   free(tsklist);
-				if (sellist)   free(sellist);
-
 				return lastchar;
 
 			   /*
@@ -925,13 +896,6 @@ generic_samp(time_t curtime, int nsecs,
 
 				if (paused)
 					break;
-
-				if (tpcumlist) free(tpcumlist);
-				if (pcumlist)  free(pcumlist);
-				if (tucumlist) free(tucumlist);
-				if (ucumlist)  free(ucumlist);
-				if (tsklist)   free(tsklist);
-				if (sellist)   free(sellist);
 
 				return lastchar;
 
@@ -969,13 +933,6 @@ generic_samp(time_t curtime, int nsecs,
                                         break;
                                 }
 
-				if (tpcumlist) free(tpcumlist);
-				if (pcumlist)  free(pcumlist);
-				if (tucumlist) free(tucumlist);
-				if (ucumlist)  free(ucumlist);
-				if (tsklist)   free(tsklist);
-				if (sellist)   free(sellist);
-
                                 return lastchar;
 
 			   /*
@@ -1007,7 +964,7 @@ generic_samp(time_t curtime, int nsecs,
 			   ** sort in disk-activity order
 			   */
 			   case MSORTDSK:
-				if ( !(supportflags & IOSTAT) )
+				if ( !(supportflags & (PATCHSTAT|IOSTAT)) )
 				{
 					statmsg = "No disk-activity figures "
 					          "available; request ignored!";
@@ -1021,10 +978,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** sort in network-activity order
 			   */
 			   case MSORTNET:
-				if ( !(supportflags & NETATOP) )
+				if ( !(supportflags & PATCHSTAT) )
 				{
-					statmsg = "Kernel module 'netatop' not "
-					          "active or no root privs; "
+					statmsg = "No kernel-patch installed; "
 					          "request ignored!";
 					break;
 				}
@@ -1036,6 +992,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** general figures per process
 			   */
 			   case MPROCGEN:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCGEN;
 
 				if (showorder != MSORTAUTO)
@@ -1048,6 +1007,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** memory-specific figures per process
 			   */
 			   case MPROCMEM:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCMEM;
 
 				if (showorder != MSORTAUTO)
@@ -1060,12 +1022,15 @@ generic_samp(time_t curtime, int nsecs,
 			   ** disk-specific figures per process
 			   */
 			   case MPROCDSK:
-				if ( !(supportflags & IOSTAT) )
+				if ( !(supportflags & (PATCHSTAT|IOSTAT)) )
 				{
 					statmsg = "No disk-activity figures "
 					          "available; request ignored!";
 					break;
 				}
+
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
 
 				showtype  = MPROCDSK;
 
@@ -1079,13 +1044,20 @@ generic_samp(time_t curtime, int nsecs,
 			   ** network-specific figures per process
 			   */
 			   case MPROCNET:
-				if ( !(supportflags & NETATOP) )
+				if ( !(supportflags & PATCHSTAT) )
 				{
-					statmsg = "Kernel module 'netatop' not "
-					          "active or no root privs; "
+#ifdef linux
+					statmsg = "No kernel-patch installed; "
 					          "request ignored!";
+#elif defined(FREEBSD)
+					statmsg = "FreeBSD have no support for per-process network stat ; "
+					          "request ignored!";
+#endif
 					break;
 				}
+
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
 
 				showtype  = MPROCNET;
 
@@ -1099,14 +1071,20 @@ generic_samp(time_t curtime, int nsecs,
 			   ** various info per process
 			   */
 			   case MPROCVAR:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCVAR;
 				firstproc = 0;
 				break;
 
 			   /*
-			   ** command line per process
+			   ** command-line per process
 			   */
 			   case MPROCARG:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCARG;
 				firstproc = 0;
 				break;
@@ -1123,6 +1101,9 @@ generic_samp(time_t curtime, int nsecs,
 					break;
 				}
 
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCOWN;
 				firstproc = 0;
 				break;
@@ -1131,6 +1112,9 @@ generic_samp(time_t curtime, int nsecs,
 			   ** scheduling-values per process
 			   */
 			   case MPROCSCH:
+				if (showtype ==MCUMUSER || showtype ==MCUMPROC)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MPROCSCH;
 
 				if (showorder != MSORTAUTO)
@@ -1146,6 +1130,9 @@ generic_samp(time_t curtime, int nsecs,
 				statmsg = "Consumption per user; use 'a' to "
 				          "toggle between all/active processes";
 
+				if (showtype != MCUMUSER)
+					lastorder = 0;	/* force new sort */
+
 				showtype  = MCUMUSER;
 				firstproc = 0;
 				break;
@@ -1156,6 +1143,9 @@ generic_samp(time_t curtime, int nsecs,
 			   case MCUMPROC:
 				statmsg = "Consumption per program; use 'a' to "
 				          "toggle between all/active processes";
+
+				if (showtype != MCUMPROC)
+					lastorder = 0;	/* force new sort */
 
 				showtype  = MCUMPROC;
 				firstproc = 0;
@@ -1295,6 +1285,7 @@ generic_samp(time_t curtime, int nsecs,
 					}
 					else
 					{
+						setpwent();
 						while ( (pwd = getpwent()))
 						{
 							if (regexec(&userregex,
@@ -1361,115 +1352,23 @@ generic_samp(time_t curtime, int nsecs,
 				printw("Process-name as regular "
 				       "expression (enter=no specific name): ");
 
-				procsel.prognamesz  = 0;
-				procsel.progname[0] = '\0';
+				procsel.procnamesz  = 0;
+				procsel.procname[0] = '\0';
 
-				scanw("%63s\n", procsel.progname);
-				procsel.prognamesz = strlen(procsel.progname);
+				scanw("%63s\n", procsel.procname);
+				procsel.procnamesz = strlen(procsel.procname);
 
-				if (procsel.prognamesz)
+				if (procsel.procnamesz)
 				{
-					if (regcomp(&procsel.progregex,
-					         procsel.progname, REG_NOSUB))
+					if (regcomp(&procsel.procregex,
+					         procsel.procname, REG_NOSUB))
 					{
 						statmsg = "Invalid regular "
 						          "expression!";
 						beep();
 
-						procsel.prognamesz  = 0;
-						procsel.progname[0] = '\0';
-					}
-				}
-
-				noecho();
-
-				move(statline, 0);
-
-				if (interval && !paused && !rawreadflag)
-					alarm(3);  /* set short timer */
-
-				firstproc = 0;
-				break;
-
-			   /*
-			   ** focus on specific system resource
-			   */
-			   case MSELSYS:
-				alarm(0);	/* stop the clock */
-				echo();
-
-				move(statline, 0);
-				clrtoeol();
-				printw("Logical volume name as regular "
-				       "expression (enter=no specific name): ");
-
-				syssel.lvmnamesz  = 0;
-				syssel.lvmname[0] = '\0';
-
-				scanw("%63s\n", syssel.lvmname);
-				syssel.lvmnamesz = strlen(syssel.lvmname);
-
-				if (syssel.lvmnamesz)
-				{
-					if (regcomp(&syssel.lvmregex,
-					         syssel.lvmname, REG_NOSUB))
-					{
-						statmsg = "Invalid regular "
-						          "expression!";
-						beep();
-
-						syssel.lvmnamesz  = 0;
-						syssel.lvmname[0] = '\0';
-					}
-				}
-
-				move(statline, 0);
-				clrtoeol();
-				printw("Disk name as regular "
-				       "expression (enter=no specific name): ");
-
-				syssel.dsknamesz  = 0;
-				syssel.dskname[0] = '\0';
-
-				scanw("%63s\n", syssel.dskname);
-				syssel.dsknamesz = strlen(syssel.dskname);
-
-				if (syssel.dsknamesz)
-				{
-					if (regcomp(&syssel.dskregex,
-					         syssel.dskname, REG_NOSUB))
-					{
-						statmsg = "Invalid regular "
-						          "expression!";
-						beep();
-
-						syssel.dsknamesz  = 0;
-						syssel.dskname[0] = '\0';
-					}
-				}
-
-				move(statline, 0);
-				clrtoeol();
-				printw("Interface name as regular "
-				       "expression (enter=no specific name): ");
-
-				syssel.itfnamesz  = 0;
-				syssel.itfname[0] = '\0';
-
-				scanw("%63s\n", syssel.itfname);
-				syssel.itfnamesz = strlen(syssel.itfname);
-
-				if (syssel.itfnamesz)
-				{
-					if (regcomp(&syssel.itfregex,
-					         syssel.itfname, REG_NOSUB))
-					{
-						statmsg = "Invalid regular "
-						          "expression!";
-						beep();
-
-						syssel.itfnamesz  = 0;
-						syssel.itfname[0] = '\0';
+						procsel.procnamesz  = 0;
+						procsel.procname[0] = '\0';
 					}
 				}
 
@@ -1512,7 +1411,7 @@ generic_samp(time_t curtime, int nsecs,
 			   case MALLPROC:
 				if (rawreadflag)
 				{
-					statmsg = "Process list from raw file "
+					statmsg = "Process-list from raw file "
 					          "will be shown anyhow!";
 					break;
 				}
@@ -1520,14 +1419,14 @@ generic_samp(time_t curtime, int nsecs,
 				if (deviatonly)
 				{
 					deviatonly=0;
-					statmsg = "All processes/threads will be "
-					          "shown/accumulated...";
+					statmsg = "All processes will be "
+					          "shown/accumulated......";
 				}
 				else
 				{
 					deviatonly=1;
-					statmsg = "Only active processes/threads "
-					          "will be shown/accumulated...";
+					statmsg = "Only active processes will"
+					          " be shown/accumulated.....";
 				}
 
 				if (interval && !paused && !rawreadflag)
@@ -1565,46 +1464,6 @@ generic_samp(time_t curtime, int nsecs,
 				}
 
 				firstproc = 0;
-				break;
-
-			   /*
-			   ** system-statistics lines:
-			   **	         toggle fixed or variable
-			   */
-			   case MSYSNOSORT:
-				if (sysnosort)
-				{
-					sysnosort=0;
-					statmsg = "System resources will be "
-					          "sorted on utilization...";
-				}
-				else
-				{
-					sysnosort=1;
-					statmsg = "System resources will not "
-					          "be sorted on utilization...";
-				}
-
-				firstproc = 0;
-				break;
-
-			   /*
-			   ** per-thread view wanted with sorting on
-			   ** process level or thread level
-			   */
-			   case MTHREAD:
-				if (threadview)
-				{
-					threadview = 0;
-					statmsg    = "Thread view disabled";
-					firstproc  = 0;
-				}
-				else
-				{
-					threadview = 1;
-					statmsg    = "Thread view enabled";
-					firstproc  = 0;
-				}
 				break;
 
 			   /*
@@ -1684,14 +1543,6 @@ generic_samp(time_t curtime, int nsecs,
 			   case MRESET:
 				getalarm(0);	/* restart the clock */
 				paused = 0;
-
-				if (tpcumlist) free(tpcumlist);
-				if (pcumlist)  free(pcumlist);
-				if (tucumlist) free(tucumlist);
-				if (ucumlist)  free(ucumlist);
-				if (tsklist)   free(tsklist);
-				if (sellist)   free(sellist);
-
 				return lastchar;
 
 			   /*
@@ -1709,41 +1560,8 @@ generic_samp(time_t curtime, int nsecs,
 				break;
 
 			   /*
-			   ** handle arrow right for command line
+			   ** handle backward
 			   */
-			   case KEY_RIGHT:
-				startoffset++;
-				break;
-
-			   /*
-			   ** handle arrow left for command line
-			   */
-			   case KEY_LEFT:
-				if (startoffset > 0)
-					startoffset--;
-				break;
-
-			   /*
-			   ** handle arrow down to go one line down
-			   */
-			   case KEY_DOWN:
-				if (firstproc < alistsz-1)
-				  //  alistsz-firstproc >= plistsz)
-					firstproc += 1;
-				break;
-
-			   /*
-			   ** handle arrow up to go one line up
-			   */
-			   case KEY_UP:	
-				if (firstproc > 0)
-					firstproc -= 1;
-				break;
-
-			   /*
-			   ** handle forward
-			   */
-			   case KEY_NPAGE:
 			   case MLISTFW:
 				if (alistsz-firstproc > plistsz)
 					firstproc += plistsz;
@@ -1752,22 +1570,16 @@ generic_samp(time_t curtime, int nsecs,
 			   /*
 			   ** handle backward
 			   */
-			   case KEY_PPAGE:
 			   case MLISTBW:
 				if (firstproc >= plistsz)
 					firstproc -= plistsz;
-				else
-					firstproc = 0;
 				break;
 
 			   /*
 			   ** handle screen resize
 			   */
 			   case KEY_RESIZE:
-				statmsg = "Window has been resized...";
-				timeout(0);
-				(void) getch();
-				timeout(-1);
+				statmsg = "Window has been resized....";
 				break;
 
 			   /*
@@ -1779,13 +1591,6 @@ generic_samp(time_t curtime, int nsecs,
 		}
 		else	/* no screen */
 		{
-			if (tpcumlist) free(tpcumlist);
-			if (pcumlist)  free(pcumlist);
-			if (tucumlist) free(tucumlist);
-			if (ucumlist)  free(ucumlist);
-			if (tsklist)   free(tsklist);
-			if (sellist)   free(sellist);
-
 			return '\0';
 		}
 	}
@@ -1795,72 +1600,58 @@ generic_samp(time_t curtime, int nsecs,
 ** accumulate all processes per user in new list
 */
 static int
-cumusers(struct tstat **curprocs, struct tstat *curusers, int numprocs)
+cumusers(struct pstat *curprocs, struct pstat *curusers, int numprocs)
 {
 	register int	i, numusers;
-	count_t		nett_wsz;
 
 	/*
 	** sort list of active processes in order of uid (increasing)
 	*/
-	qsort(curprocs, numprocs, sizeof(struct tstat *), compusr);
+	qsort(curprocs, numprocs, sizeof(struct pstat), compusr);
 
 	/*
 	** accumulate all processes per user in the new list
 	*/
 	for (numusers=i=0; i < numprocs; i++, curprocs++)
 	{
-		if (procsuppress(*curprocs, &procsel))
+		if (procsuppress(curprocs, &procsel))
 			continue;
 
-		if ( curusers->gen.ruid != (*curprocs)->gen.ruid )
+		if ( curusers->gen.ruid != curprocs->gen.ruid )
 		{
 			if (curusers->gen.pid)
 			{
 				numusers++;
 				curusers++;
 			}
-			curusers->gen.ruid = (*curprocs)->gen.ruid;
+			curusers->gen.ruid = curprocs->gen.ruid;
 		}
 
 		curusers->gen.pid++;		/* misuse as counter */
 
-		curusers->gen.isproc  = 1;
-		curusers->gen.nthr   += (*curprocs)->gen.nthr;
-		curusers->cpu.utime  += (*curprocs)->cpu.utime;
-		curusers->cpu.stime  += (*curprocs)->cpu.stime;
+		curusers->gen.nthr   += curprocs->gen.nthr;
+		curusers->cpu.utime  += curprocs->cpu.utime;
+		curusers->cpu.stime  += curprocs->cpu.stime;
 
- 		if ((*curprocs)->dsk.wsz > (*curprocs)->dsk.cwsz)
-                	nett_wsz = (*curprocs)->dsk.wsz -(*curprocs)->dsk.cwsz;
-		else
-			nett_wsz = 0;
+		curusers->dsk.rsz    += curprocs->dsk.rsz;
+		curusers->dsk.wsz    += curprocs->dsk.wsz;
+			
+		curusers->dsk.rio    += curprocs->dsk.rio;
+		curusers->dsk.wio    += curprocs->dsk.wio;
+			
+		curusers->net.tcpsnd += curprocs->net.tcpsnd;
+		curusers->net.tcprcv += curprocs->net.tcprcv;
+		curusers->net.udpsnd += curprocs->net.udpsnd;
+		curusers->net.udprcv += curprocs->net.udprcv;
+		curusers->net.rawsnd += curprocs->net.rawsnd;
+		curusers->net.rawrcv += curprocs->net.rawrcv;
 
-		curusers->dsk.rio    += (*curprocs)->dsk.rsz;
-		curusers->dsk.wio    += nett_wsz;
-
-		curusers->dsk.rsz    += curusers->dsk.rio;
-		curusers->dsk.wsz    +=	curusers->dsk.wio;
-
-		curusers->net.tcpsnd += (*curprocs)->net.tcpsnd;
-		curusers->net.tcprcv += (*curprocs)->net.tcprcv;
-		curusers->net.udpsnd += (*curprocs)->net.udpsnd;
-		curusers->net.udprcv += (*curprocs)->net.udprcv;
-
-		curusers->net.tcpssz += (*curprocs)->net.tcpssz;
-		curusers->net.tcprsz += (*curprocs)->net.tcprsz;
-		curusers->net.udpssz += (*curprocs)->net.udpssz;
-		curusers->net.udprsz += (*curprocs)->net.udprsz;
-
-		if ((*curprocs)->gen.state != 'E')
+		if (curprocs->gen.state != 'E')
 		{
-			curusers->mem.rmem   += (*curprocs)->mem.rmem;
-			curusers->mem.vmem   += (*curprocs)->mem.vmem;
-			curusers->mem.vlibs  += (*curprocs)->mem.vlibs;
-			curusers->mem.vdata  += (*curprocs)->mem.vdata;
-			curusers->mem.vstack += (*curprocs)->mem.vstack;
-			curusers->mem.vswap  += (*curprocs)->mem.vswap;
-			curusers->mem.rgrow  += (*curprocs)->mem.rgrow;
-			curusers->mem.vgrow  += (*curprocs)->mem.vgrow;
+			curusers->mem.rmem   += curprocs->mem.rmem;
+			curusers->mem.vmem   += curprocs->mem.vmem;
+			curusers->mem.rgrow  += curprocs->mem.rgrow;
+			curusers->mem.vgrow  += curprocs->mem.vgrow;
 		}
 	}
 
@@ -1875,72 +1666,58 @@ cumusers(struct tstat **curprocs, struct tstat *curusers, int numprocs)
 ** into a new list
 */
 static int
-cumprocs(struct tstat **curprocs, struct tstat *curprogs, int numprocs)
+cumprocs(struct pstat *curprocs, struct pstat *curprogs, int numprocs)
 {
 	register int	i, numprogs;
-	count_t		nett_wsz;
 
 	/*
 	** sort list of active processes in order of process-name
 	*/
-	qsort(curprocs, numprocs, sizeof(struct tstat *), compnam);
+	qsort(curprocs, numprocs, sizeof(struct pstat), compnam);
 
 	/*
 	** accumulate all processes with same name in the new list
 	*/
 	for (numprogs=i=0; i < numprocs; i++, curprocs++)
 	{
-		if (procsuppress(*curprocs, &procsel))
+		if (procsuppress(curprocs, &procsel))
 			continue;
 
-		if ( strcmp(curprogs->gen.name, (*curprocs)->gen.name) != 0)
+		if ( strcmp(curprogs->gen.name, curprocs->gen.name) != 0)
 		{
 			if (curprogs->gen.pid)
 			{
 				numprogs++;
 				curprogs++;
 			}
-			strcpy(curprogs->gen.name, (*curprocs)->gen.name);
+			strcpy(curprogs->gen.name, curprocs->gen.name);
 		}
 
 		curprogs->gen.pid++;		/* misuse as counter */
 
-		curprogs->gen.isproc  = 1;
-		curprogs->gen.nthr   += (*curprocs)->gen.nthr;
-		curprogs->cpu.utime  += (*curprocs)->cpu.utime;
-		curprogs->cpu.stime  += (*curprocs)->cpu.stime;
+		curprogs->gen.nthr   += curprocs->gen.nthr;
+		curprogs->cpu.utime  += curprocs->cpu.utime;
+		curprogs->cpu.stime  += curprocs->cpu.stime;
 
- 		if ((*curprocs)->dsk.wsz > (*curprocs)->dsk.cwsz)
-                	nett_wsz = (*curprocs)->dsk.wsz -(*curprocs)->dsk.cwsz;
-		else
-			nett_wsz = 0;
-
-		curprogs->dsk.rio    += (*curprocs)->dsk.rsz;
-		curprogs->dsk.wio    += nett_wsz;
+		curprogs->dsk.rio    += curprocs->dsk.rio;
+		curprogs->dsk.wio    += curprocs->dsk.wio;
 			
-		curprogs->dsk.rsz    += curprogs->dsk.rio;
-		curprogs->dsk.wsz    +=	curprogs->dsk.wio;
+		curprogs->dsk.rsz    += curprocs->dsk.rsz;
+		curprogs->dsk.wsz    += curprocs->dsk.wsz;
 			
-		curprogs->net.tcpsnd += (*curprocs)->net.tcpsnd;
-		curprogs->net.tcprcv += (*curprocs)->net.tcprcv;
-		curprogs->net.udpsnd += (*curprocs)->net.udpsnd;
-		curprogs->net.udprcv += (*curprocs)->net.udprcv;
+		curprogs->net.tcpsnd += curprocs->net.tcpsnd;
+		curprogs->net.tcprcv += curprocs->net.tcprcv;
+		curprogs->net.udpsnd += curprocs->net.udpsnd;
+		curprogs->net.udprcv += curprocs->net.udprcv;
+		curprogs->net.rawsnd += curprocs->net.rawsnd;
+		curprogs->net.rawrcv += curprocs->net.rawrcv;
 
-		curprogs->net.tcpssz += (*curprocs)->net.tcpssz;
-		curprogs->net.tcprsz += (*curprocs)->net.tcprsz;
-		curprogs->net.udpssz += (*curprocs)->net.udpssz;
-		curprogs->net.udprsz += (*curprocs)->net.udprsz;
-
-		if ((*curprocs)->gen.state != 'E')
+		if (curprocs->gen.state != 'E')
 		{
-			curprogs->mem.rmem   += (*curprocs)->mem.rmem;
-			curprogs->mem.vmem   += (*curprocs)->mem.vmem;
-			curprogs->mem.vlibs  += (*curprocs)->mem.vlibs;
-			curprogs->mem.vdata  += (*curprocs)->mem.vdata;
-			curprogs->mem.vstack += (*curprocs)->mem.vstack;
-			curprogs->mem.vswap  += (*curprocs)->mem.vswap;
-			curprogs->mem.rgrow  += (*curprocs)->mem.rgrow;
-			curprogs->mem.vgrow  += (*curprocs)->mem.vgrow;
+			curprogs->mem.rmem   += curprocs->mem.rmem;
+			curprogs->mem.vmem   += curprocs->mem.vmem;
+			curprogs->mem.rgrow  += curprocs->mem.rgrow;
+			curprogs->mem.vgrow  += curprocs->mem.vgrow;
 		}
 	}
 
@@ -1949,45 +1726,6 @@ cumprocs(struct tstat **curprocs, struct tstat *curprogs, int numprocs)
 
 	return numprogs;
 }
-
-
-/*
-** function that checks if the current process is selected or suppressed;
-** returns 1 (suppress) or 0 (do not suppress)
-*/
-static int
-procsuppress(struct tstat *curstat, struct pselection *sel)
-{
-	/*
-	** check if only processes of a particular user
-	** should be shown
-	*/
-	if (sel->userid[0] != USERSTUB)
-	{
-		int     u = 0;
-
-		while (sel->userid[u] != USERSTUB)
-		{
-			if (sel->userid[u] == curstat->gen.ruid)
-				break;
-			u++;
-		}
-
-		if (sel->userid[u] != curstat->gen.ruid)
-			return 1;
-	}
-
-	/*
-	** check if only processes with a particular name
-	** should be shown
-	*/
-	if (sel->prognamesz &&
-	    regexec(&(sel->progregex), curstat->gen.name, 0, NULL, 0))
-		return 1;
-
-	return 0;
-}
-
 
 static void
 limitedlines(void)
@@ -2063,208 +1801,6 @@ printg(const char *format, ...)
 }
 
 /*
-** initialize generic sample output functions
-*/
-static void
-generic_init(void)
-{
-	int i;
-
-	/*
-	** check if default sort order and/or showtype are overruled
-	** by commando-line flags
-	*/
-	for (i=0; flaglist[i]; i++)
-	{
-		switch (flaglist[i])
-		{
-		   case MSORTAUTO:
-			showorder = MSORTAUTO;
-			break;
-
-		   case MSORTCPU:
-			showorder = MSORTCPU;
-			break;
-
-		   case MSORTMEM:
-			showorder = MSORTMEM;
-			break;
-
-		   case MSORTDSK:
-			showorder = MSORTDSK;
-			break;
-
-		   case MSORTNET:
-			showorder = MSORTNET;
-			break;
-
-		   case MPROCGEN:
-			showtype  = MPROCGEN;
-			showorder = MSORTCPU;
-			break;
-
-		   case MPROCMEM:
-			showtype  = MPROCMEM;
-			showorder = MSORTMEM;
-			break;
-
-		   case MPROCSCH:
-			showtype  = MPROCSCH;
-			showorder = MSORTCPU;
-			break;
-
-		   case MPROCDSK:
-			if ( !(supportflags & IOSTAT) )
-			{
-				fprintf(stderr,
-					"No disk-activity figures "
-				        "available; request ignored\n");
-				sleep(3);
-				break;
-			}
-
-			showtype  = MPROCDSK;
-			showorder = MSORTDSK;
-			break;
-
-		   case MPROCNET:
-			if ( !(supportflags & NETATOP) )
-			{
-				fprintf(stderr, "Kernel module 'netatop' not "
-					          "active; request ignored!");
-				sleep(3);
-				break;
-			}
-
-			showtype  = MPROCNET;
-			showorder = MSORTNET;
-			break;
-
-		   case MPROCVAR:
-			showtype  = MPROCVAR;
-			break;
-
-		   case MPROCARG:
-			showtype  = MPROCARG;
-			break;
-
-		   case MPROCOWN:
-			showtype  = MPROCOWN;
-			break;
-
-		   case MAVGVAL:
-			if (avgval)
-				avgval=0;
-			else
-				avgval=1;
-			break;
-
-		   case MCUMUSER:
-			showtype  = MCUMUSER;
-			break;
-
-		   case MCUMPROC:
-			showtype  = MCUMPROC;
-			break;
-
-		   case MSYSFIXED:
-			if (fixedhead)
-				fixedhead=0;
-			else
-				fixedhead=1;
-			break;
-
-		   case MSYSNOSORT:
-			if (sysnosort)
-				sysnosort=0;
-			else
-				sysnosort=1;
-			break;
-
-		   case MTHREAD:
-			if (threadview)
-				threadview = 0;
-			else
-				threadview = 1;
-			break;
-
-		   case MCOLORS:
-			if (usecolors)
-				usecolors=0;
-			else
-				usecolors=1;
-			break;
-
-		   case MSYSLIMIT:
-			limitedlines();
-			break;
-
-		   default:
-			prusage("atop");
-		}
-	}
-
-       	/*
-       	** set stdout output on line-basis
-       	*/
-       	setvbuf(stdout, (char *)0, _IOLBF, BUFSIZ);
-
-       	/*
-       	** check if STDOUT is related to a tty or
-       	** something else (file, pipe)
-       	*/
-       	if ( isatty(1) )
-               	screen = 1;
-       	else
-             	screen = 0;
-
-       	/*
-       	** install catch-routine to finish in a controlled way
-	** and activate cbreak-mode
-       	*/
-       	if (screen)
-	{
-		/*
-		** initialize screen-handling via curses
-		*/
-		initscr();
-		cbreak();
-		noecho();
-		keypad(stdscr, TRUE);
-
-		if (COLS  < 30)
-		{
-			endwin();	// finish curses interface
-
-			fprintf(stderr, "Not enough columns available\n"
-			                "(need at least %d columns)\n", 30);
-			fprintf(stderr, "Please resize window....\n");
-
-			cleanstop(1);
-		}
-
-		if (has_colors())
-		{
-			use_default_colors();
-			start_color();
-
-			init_pair(COLORLOW,  COLOR_GREEN,  -1);
-			init_pair(COLORMED,  COLOR_CYAN,   -1);
-			init_pair(COLORHIGH, COLOR_RED,    -1);
-
-			init_pair(COLORTHR,  COLOR_YELLOW,   -1);
-		}
-		else
-		{
-			usecolors = 0;
-		}
-	}
-
-	signal(SIGINT,   cleanstop);
-	signal(SIGTERM,  cleanstop);
-}
-
-/*
 ** show help information in interactive mode
 */
 static struct helptext {
@@ -2272,83 +1808,71 @@ static struct helptext {
 	char helparg;
 } helptext[] = {
 	{"Figures shown for active processes:\n", 		' '},
-	{"\t'%c'  - generic info (default)\n",			MPROCGEN},
-	{"\t'%c'  - memory details\n",				MPROCMEM},
-	{"\t'%c'  - disk details\n",				MPROCDSK},
-	{"\t'%c'  - network details\n",				MPROCNET},
-	{"\t'%c'  - scheduling and thread-group info\n",	MPROCSCH},
-	{"\t'%c'  - various info (ppid, user/group, date/time, status, "
+	{"\t'%c' - generic info (default)\n",			MPROCGEN},
+	{"\t'%c' - memory details\n",				MPROCMEM},
+	{"\t'%c' - disk details\n",				MPROCDSK},
+	{"\t'%c' - network details\n",				MPROCNET},
+	{"\t'%c' - scheduling and thread-group info\n",		MPROCSCH},
+	{"\t'%c' - various info (ppid, user/group, date/time, status, "
 	 "exitcode)\n",	MPROCVAR},
-	{"\t'%c'  - full command line per process\n",		MPROCARG},
-	{"\t'%c'  - use own output line definition\n",		MPROCOWN},
+	{"\t'%c' - full command-line per process\n",		MPROCARG},
+	{"\t'%c' - use own output line definition\n",		MPROCOWN},
 	{"\n",							' '},
 	{"Sort list of processes in order of:\n",		' '},
-	{"\t'%c'  - cpu activity\n",				MSORTCPU},
-	{"\t'%c'  - memory consumption\n",			MSORTMEM},
-	{"\t'%c'  - disk activity\n",				MSORTDSK},
-	{"\t'%c'  - network activity\n",			MSORTNET},
-	{"\t'%c'  - most active system resource (auto mode)\n",	MSORTAUTO},
+	{"\t'%c' - cpu activity\n",				MSORTCPU},
+	{"\t'%c' - memory consumption\n",			MSORTMEM},
+	{"\t'%c' - disk activity\n",				MSORTDSK},
+	{"\t'%c' - network activity\n",				MSORTNET},
+	{"\t'%c' - most active system resource (auto mode)\n",	MSORTAUTO},
 	{"\n",							' '},
 	{"Accumulated figures:\n",				' '},
-	{"\t'%c'  - total resource consumption per user\n", 	MCUMUSER},
-	{"\t'%c'  - total resource consumption per program (i.e. same "
+	{"\t'%c' - total resource consumption per user\n", 	MCUMUSER},
+	{"\t'%c' - total resource consumption per program (i.e. same "
 	 "process name)\n",					MCUMPROC},
 	{"\n",							' '},
-	{"Selections (keys shown in header line):\n",		' '},
-	{"\t'%c'  - focus on specific user name        (regular expression)\n",
+	{"Selections:\n",					' '},
+	{"\t'%c' - focus on specific user name    (regular expression)\n",
 								MSELUSER},
-	{"\t'%c'  - focus on specific process name     (regular expression)\n",
+	{"\t'%c' - focus on specific process name (regular expression)\n",
 								MSELPROC},
-	{"\t'%c'  - focus on specific system resources (regular expression)\n",
-								MSELSYS},
-	{"\n",							      ' '},
-	{"Screen-handling:\n",					      ' '},
-	{"\t^L   - redraw the screen                       \n",	      ' '},
-	{"\tPgDn - show next page in the process list (or ^F)\n",     ' '},
-	{"\tArDn - arrow-down for next line in process list\n",       ' '},
-	{"\tPgUp - show previous page in the process list (or ^B)\n", ' '},
-	{"\tArUp   arrow-up for previous line in process list\n",     ' '},
 	{"\n",							' '},
-	{"\tArRt - arrow-right for next character in full command line\n", ' '},
-	{"\tArLt - arrow-left  for previous character in full command line\n",
-									' '},
+	{"Screen-handling:\n",					' '},
+	{"\t^L  - redraw the screen                       \n",	' '},
+	{"\t^F  - show next     page in the process-list (forward)\n",	' '},
+	{"\t^B  - show previous page in the process-list (backward)\n", ' '},
 	{"\n",							' '},
-	{"Presentation (keys shown in header line):\n",  	' '},
-	{"\t'%c'  - show individual threads                        (toggle)\n",
-		 						MTHREAD},
-	{"\t'%c'  - show all processes (default: active processes) (toggle)\n",
+	{"Presentation (these keys are shown in the header line):\n",	' '},
+	{"\t'%c' - show all processes (default: active processes)   (toggle)\n",
 								MALLPROC},
-	{"\t'%c'  - show fixed number of header-lines              (toggle)\n",
+	{"\t'%c' - fixate on static range of header-lines           (toggle)\n",
 								MSYSFIXED},
-	{"\t'%c'  - suppress sorting system resources              (toggle)\n",
-								MSYSNOSORT},
-	{"\t'%c'  - no colors to indicate high occupation          (toggle)\n",
+	{"\t'%c' - no colors to indicate high occupation            (toggle)\n",
 								MCOLORS},
-	{"\t'%c'  - show average-per-second i.s.o. total values    (toggle)\n",
+	{"\t'%c' - show average-per-second i.s.o. total values      (toggle)\n",
 								MAVGVAL},
 	{"\n",							' '},
 	{"Raw file viewing:\n",					' '},
-	{"\t'%c'  - show next     sample in raw file\n",	MSAMPNEXT},
-	{"\t'%c'  - show previous sample in raw file\n",	MSAMPPREV},
-	{"\t'%c'  - branch to certain time in raw file)\n",	MSAMPBRANCH},
-	{"\t'%c'  - rewind to begin of raw file)\n",		MRESET},
+	{"\t'%c' - show next     sample in raw file\n",		MSAMPNEXT},
+	{"\t'%c' - show previous sample in raw file\n",		MSAMPPREV},
+	{"\t'%c' - branch to certain time in raw file)\n",	MSAMPBRANCH},
+	{"\t'%c' - rewind to begin of raw file)\n",		MRESET},
 	{"\n",							' '},
 	{"Miscellaneous commands:\n",				' '},
-	{"\t'%c'  - change interval-timer (0 = only manual trigger)\n",
+	{"\t'%c' - change interval-timer (0 = only manual trigger)\n",
 								MINTERVAL},
-	{"\t'%c'  - manual trigger to force next sample\n",	MSAMPNEXT},
-	{"\t'%c'  - reset counters to boot time values\n",	MRESET},
-	{"\t'%c'  - pause-button to freeze current sample (toggle)\n",
+	{"\t'%c' - manual trigger to force next sample\n",	MSAMPNEXT},
+	{"\t'%c' - reset counters to boot time values\n",	MRESET},
+	{"\t'%c' - pause-button to freeze current sample (toggle)\n",
 								MPAUSE},
 	{"\n",							' '},
-	{"\t'%c'  - limited lines for per-cpu, disk and interface resources\n",
+	{"\t'%c' - limited lines for per-cpu, disk and interface resources\n",
 								MSYSLIMIT},
-	{"\t'%c'  - kill a process (i.e. send a signal)\n",	MKILLPROC},
+	{"\t'%c' - kill a process (i.e. send a signal)\n",	MKILLPROC},
 	{"\n",							' '},
-	{"\t'%c'  - version-information\n",			MVERSION},
-	{"\t'%c'  - help-information\n",			MHELP1},
-	{"\t'%c'  - help-information\n",			MHELP2},
-	{"\t'%c'  - quit this program\n",			MQUIT},
+	{"\t'%c' - version-information\n",			MVERSION},
+	{"\t'%c' - help-information\n",				MHELP1},
+	{"\t'%c' - help-information\n",				MHELP2},
+	{"\t'%c' - quit this program\n",			MQUIT},
 };
 
 static int helplines = sizeof(helptext)/sizeof(struct helptext);
@@ -2428,13 +1952,10 @@ generic_end(void)
 void
 generic_usage(void)
 {
-	printf("\t  -%c  show fixed number of lines with system statistics\n",
+	printf("\t  -%c  show fixed number of lines with system-statistics\n",
 			MSYSFIXED);
-	printf("\t  -%c  suppress sorting of system resources\n",
-			MSYSNOSORT);
 	printf("\t  -%c  show limited number of lines for certain resources\n",
 			MSYSLIMIT);
-	printf("\t  -%c  show individual threads\n", MTHREAD);
 	printf("\t  -%c  show average-per-second i.s.o. total values\n\n",
 			MAVGVAL);
 	printf("\t  -%c  no colors in case of high occupation\n",
@@ -2451,7 +1972,7 @@ generic_usage(void)
 			MPROCSCH);
 	printf("\t  -%c  show various process-info (ppid, user/group, "
 	                 "date/time)\n", MPROCVAR);
-	printf("\t  -%c  show command line per process\n",
+	printf("\t  -%c  show command-line per process\n",
 			MPROCARG);
 	printf("\t  -%c  show own defined process-info\n",
 			MPROCOWN);
@@ -2498,6 +2019,7 @@ do_username(char *name, char *val)
 			exit(1);
 		}
 
+		setpwent();
 		while ( (pwd = getpwent()))
 		{
 			if (regexec(&userregex, pwd->pw_name, 0, NULL, 0))
@@ -2541,12 +2063,12 @@ do_username(char *name, char *val)
 void
 do_procname(char *name, char *val)
 {
-	strncpy(procsel.progname, val, sizeof procsel.progname -1);
-	procsel.prognamesz = strlen(procsel.progname);
+	strncpy(procsel.procname, val, sizeof procsel.procname -1);
+	procsel.procnamesz = strlen(procsel.procname);
 
-	if (procsel.prognamesz)
+	if (procsel.procnamesz)
 	{
-		if (regcomp(&procsel.progregex, procsel.progname, REG_NOSUB))
+		if (regcomp(&procsel.procregex, procsel.procname, REG_NOSUB))
 		{
 			fprintf(stderr,
 				"atoprc - %s: invalid regular expression %s\n",
@@ -2676,14 +2198,6 @@ do_flags(char *name, char *val)
 
 		   case MSYSFIXED:
 			fixedhead=1;
-			break;
-
-		   case MSYSNOSORT:
-			sysnosort=1;
-			break;
-
-		   case MTHREAD:
-			threadview = 1;
 			break;
 
 		   case MCOLORS:

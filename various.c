@@ -111,12 +111,14 @@ static const char rcsid[] = "$Id: various.c,v 1.21 2010/11/12 06:16:16 gerlof Ex
 #include <unistd.h>
 #include <ctype.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <stdarg.h>
 
 #include "atop.h"
 #include "acctproc.h"
 
+#ifdef FREEBSD
+    #include <kvm.h>
+    extern  kvm_t *kd;
+#endif
 /*
 ** Function convtime() converts a value (number of seconds since
 ** 1-1-1970) to an ascii-string in the format hh:mm:ss, stored in
@@ -313,19 +315,19 @@ val2elapstr(int value, char *strvalue)
 
 /*
 ** Function val2cpustr() converts a value (number of milliseconds)
-** to an ascii-string of 6 positions in milliseconds or minute-seconds or
-** hours-minutes, stored in strvalue (at least 7 positions).
+** to an ascii-string of 7 positions in milliseconds or minute-seconds or
+** hours-minutes, stored in strvalue (at least 8 positions).
 */
 #define	MAXMSEC		(count_t)100000
-#define	MAXSEC		(count_t)6000
-#define	MAXMIN		(count_t)6000
+#define	MAXSEC		(count_t)60000
+#define	MAXMIN		(count_t)60000
 
 char *
 val2cpustr(count_t value, char *strvalue)
 {
 	if (value < MAXMSEC)
 	{
-		sprintf(strvalue, "%2lld.%02llds", value/1000, value%1000/10);
+		sprintf(strvalue, "%3lld.%02llds", value/1000, value%1000/10);
 	}
 	else
 	{
@@ -336,7 +338,7 @@ val2cpustr(count_t value, char *strvalue)
 
         	if (value < MAXSEC) 
         	{
-               	 	sprintf(strvalue, "%2lldm%02llds", value/60, value%60);
+               	 	sprintf(strvalue, "%3lldm%02llds", value/60, value%60);
 		}
 		else
 		{
@@ -347,7 +349,7 @@ val2cpustr(count_t value, char *strvalue)
 
 			if (value < MAXMIN) 
 			{
-				sprintf(strvalue, "%2lldh%02lldm",
+				sprintf(strvalue, "%3lldh%02lldm",
 							value/60, value%60);
 			}
 			else
@@ -357,7 +359,7 @@ val2cpustr(count_t value, char *strvalue)
 				*/
 				value = (value + 30) / 60;
 
-				sprintf(strvalue, "%2lldd%02lldh",
+				sprintf(strvalue, "%3lldd%02lldh",
 						value/24, value%24);
 			}
 		}
@@ -520,44 +522,43 @@ numeric(char *ns)
 
 /*
 ** Function getboot() returns the boot-time of this system 
-** as number of jiffies since 1-1-1970.
+** (as number of seconds since 1-1-1970).
 */
-unsigned long long
+time_t
 getboot(void)
 {
-	static unsigned long long	boottime;
-	unsigned long long		getbootlinux(long);
+	static time_t	boottime;
 
 	if (!boottime)		/* do this only once */
+	{
+#ifdef	linux
+		time_t		getbootlinux(long);
+
 		boottime = getbootlinux(hertz);
+#elif defined(FREEBSD)
+		time_t		getbootbsd(long);
+		
+		boottime = getbootbsd(hertz);
+#else
+		struct tms	tms;
+		time_t 		boottime_again;
+
+		/*
+		** beware that between time() and times() a one-second
+		** upgrade could have taken place in the kernel, so an
+		** extra check is issued; if we were around a
+		** second-upgrade, just do it again (we just passed
+		** the danger-zone)
+		*/
+		boottime 	= time(0) - (times(&tms) / hertz);
+		boottime_again	= time(0) - (times(&tms) / hertz);
+
+		if (boottime != boottime_again)
+			boottime = time(0) - (times(&tms) / hertz);
+#endif
+	}
 
 	return boottime;
-}
-
-/*
-** generic pointer verification after malloc
-*/
-void
-ptrverify(const void *ptr, const char *errormsg, ...)
-{
-	va_list args;
-
-        va_start(args, errormsg);
-
-	if (!ptr)
-	{
-		acctswoff();
-		netatop_signoff();
-
-		if (vis.show_end)
-			(vis.show_end)();
-
-        	va_list args;
-		fprintf(stderr, errormsg, args);
-        	va_end  (args);
-
-		exit(13);
-	}
 }
 
 /*
@@ -567,33 +568,10 @@ void
 cleanstop(exitcode)
 {
 	acctswoff();
-	netatop_signoff();
 	(vis.show_end)();
+#ifdef FREEBSD
+	if(kd)
+	    kvm_close(kd);
+#endif
 	exit(exitcode);
-}
-
-/*
-** drop the root privileges that might be obtained via setuid-bit
-**
-** this action may only fail with errno EPERM (normal situation when
-** atop has not been started with setuid-root privs); when this
-** action fails with EAGAIN or ENOMEM, atop should not continue
-** without root privs being dropped...
-*/
-int
-droprootprivs(void)
-{
-	if (seteuid( getuid() ) == -1 && errno != EPERM)
-		return 0;	/* false */
-	else
-		return 1;	/* true  */
-}
-
-/*
-** regain the root privileges that might be dropped earlier
-*/
-void
-regainrootprivs(void)
-{
-	seteuid(0);
 }

@@ -190,24 +190,20 @@ static const char rcsid[] = "$Id: deviate.c,v 1.45 2010/10/23 14:02:03 gerlof Ex
 
 #define	MAX32BITVAL	0x100000000LL
 
-static void calcdiff(struct tstat *, struct tstat *, struct tstat *,
-							char, count_t);
-
 /*
 ** calculate the process-activity during the last sample
 */
 int
-deviatproc(struct tstat *aproc, int npresent,
-           struct tstat *eproc, int nexit, int deviatonly,
-	   struct tstat *dproc, struct sstat *dstat, unsigned int *nactproc,
-           int *totproc, int *totrun, int *totslpi, int *totslpu, int *nzombie)
+deviatproc(struct pstat *aproc, int npresent,
+           struct pstat *eproc, int nexit, int deviatonly,
+	   struct pstat *dproc, struct sstat *dstat,
+           int *ntrun, int *ntslpi, int *ntslpu, int *nzombie)
 {
 	register int		c, d;
-	register struct tstat	*curstat, *devstat, *procstat = 0;
-	struct tstat		prestat;
+	register struct pstat	*curstat, *devstat;
+	struct pstat		prestat;
 	struct pinfo		*pinfo;
 	count_t			totusedcpu;
-	char			procsaved = 1, hashtype = 'p';
 
 	/*
 	** needed for sanity check later on...
@@ -219,146 +215,166 @@ deviatproc(struct tstat *aproc, int npresent,
 			  dstat->cpu.all.guest;
 
 	/*
-	** make new list of all tasks in the process-database;
-	** after handling all processes, the left-overs are processes
-	** that have disappeared since the previous sample
+	** make new list of all processes in the process-database;
+	** after handling all processes, the left-overs
+	** should have disappeared since the previous sample
 	*/
 	pdb_makeresidue();
 
 	/*
 	** calculate deviations per present process
 	*/
-	*totproc=*totrun=*totslpi=*totslpu=*nzombie= 0;
+	*ntrun=*ntslpi=*ntslpu=*nzombie= 0;
 
-	for (c=0, d=0, *nactproc=0; c < npresent; c++)
+	for (c=0, d=0; c < npresent; c++)
 	{
-		char	newtask = 0;
+		char	newproc = 0;
 
 		curstat = aproc+c;
 
-		if (curstat->gen.isproc)
+		if (curstat->gen.state == 'Z')
 		{
-			(*totproc)++;
-
-			if (curstat->gen.state == 'Z')
-			{
-				(*nzombie)++;
-			}
-			else
-			{
-				*totrun		+= curstat->gen.nthrrun;
-				*totslpi	+= curstat->gen.nthrslpi;
-				*totslpu	+= curstat->gen.nthrslpu;
-			}
+			(*nzombie)++;
+		}
+		else
+		{
+			*ntrun	+= curstat->gen.nthrrun;
+			*ntslpi	+= curstat->gen.nthrslpi;
+			*ntslpu	+= curstat->gen.nthrslpu;
 		}
 
 		/*
-		** get previous figures from task-database
+		** get previous figures from process-database
 		*/
-		if ( pdb_gettask(curstat->gen.pid, curstat->gen.isproc,
-		                 curstat->gen.btime, &pinfo))
+		if ( pdb_getproc(curstat->gen.pid, curstat->gen.btime, &pinfo))
 		{
 			/*
-			** task already present during the previous sample;
-			** if no differences with previous sample, skip task
-			** unless all tasks have to be shown
-			**
-			** it might be that a process appears to have no
-			** differences while one its threads has differences;
-			** than the process will be inserted as well
+			** process already present during the previous sample;
+			** check differences with previous sample
 			*/
-			if (deviatonly && memcmp(curstat, &pinfo->tstat, 
-					           sizeof(struct tstat)) == EQ)
-			{
-				/* remember last unsaved process */
-				if (curstat->gen.isproc)
-				{
-					procstat  = curstat;
-					procsaved = 0;
-				}
-
+			if (deviatonly && memcmp(curstat, &pinfo->pstat, 
+					           sizeof(struct pstat)) == EQ)
 				continue;
-			}
 
 			/*
-			** differences detected, so the task was active,
+			** differences detected, so the process was active,
 		        ** or its status or memory-occupation has changed;
 			** save stats from previous sample (to use for
 			** further calculations) and store new statistics
-			** in task-database
+			** in process-database
 			*/
-			prestat 	= pinfo->tstat;	/* save old	*/
-			pinfo->tstat 	= *curstat;	/* overwrite	*/
+			prestat 	= pinfo->pstat;	/* save old	*/
+			pinfo->pstat 	= *curstat;	/* overwrite	*/
 		}
 		else
 		{
 			/*
-			** new task which must have been started during
+			** new process which must have been started during
 			** last interval
 			*/
 			memset(&prestat, 0, sizeof(prestat));
 
 			/*
-			** create new task struct
+			** create new process
 			*/
-			pinfo = calloc(1, sizeof(struct pinfo));
+			pdb_newproc(&pinfo);
 
-			ptrverify(pinfo, "Malloc failed for new pinfo\n");
-
-			pinfo->tstat = *curstat;
+			pinfo->pstat = *curstat;
 
 			/*
-			** add new task to task-database
+			** add new process to process-database
 			*/
-			pdb_addtask(curstat->gen.pid, pinfo);
+			pdb_addproc( curstat->gen.pid, pinfo);
 
-			newtask = 1;
+			newproc = 1;
 		}
 
 		/*
-		** active task found; do the difference calculations
+		** now do the calculations
 		*/
-		if (curstat->gen.isproc)
-		{
-			procsaved = 1;
-			(*nactproc)++;
-		}
-		else
-		{
-			/*
-			** active thread: check if related process registered
-			*/
-			if (!procsaved)
-			{
-				devstat = dproc+d;
-				calcdiff(devstat, procstat, procstat, 0,
-								totusedcpu);
-				procsaved = 1;
-				(*nactproc)++;
-				d++;
-			}
-		}
-
 		devstat = dproc+d;
 
+		devstat->gen        = curstat->gen;
 
-		calcdiff(devstat, curstat, &prestat, newtask, totusedcpu);
+		if (newproc)
+			devstat->gen.excode |= ~(INT_MAX);
+
+		devstat->cpu.nice     = curstat->cpu.nice;
+		devstat->cpu.prio     = curstat->cpu.prio;
+		devstat->cpu.rtprio   = curstat->cpu.rtprio;
+		devstat->cpu.policy   = curstat->cpu.policy;
+		devstat->cpu.curcpu   = curstat->cpu.curcpu;
+		devstat->cpu.sleepavg = curstat->cpu.sleepavg;
+
+		devstat->cpu.stime  = 
+			subcount(curstat->cpu.stime, prestat.cpu.stime);
+		devstat->cpu.utime  =
+			subcount(curstat->cpu.utime, prestat.cpu.utime);
+
+		/*
+		** sometimes particular kernel versions supply a smaller
+		** amount for consumed CPU-ticks than a previous sample;
+		** with unsigned calculations this results in 497 days of
+		** CPU-consumption so a sanity-check is needed here...
+		*/
+		if (devstat->cpu.stime > totusedcpu)
+			devstat->cpu.stime = 1;
+
+		if (devstat->cpu.utime > totusedcpu)
+			devstat->cpu.utime = 1;
+
+		/*
+		** do further calculations
+		*/
+		devstat->dsk.rio    =
+			subcount(curstat->dsk.rio, prestat.dsk.rio);
+		devstat->dsk.rsz    =
+			subcount(curstat->dsk.rsz, prestat.dsk.rsz);
+		devstat->dsk.wio    =
+			subcount(curstat->dsk.wio, prestat.dsk.wio);
+		devstat->dsk.wsz    =
+			subcount(curstat->dsk.wsz, prestat.dsk.wsz);
+		devstat->dsk.cwsz   =
+			subcount(curstat->dsk.cwsz, prestat.dsk.cwsz);
+
+		devstat->mem.shtext = curstat->mem.shtext;
+		devstat->mem.vmem   = curstat->mem.vmem;
+		devstat->mem.rmem   = curstat->mem.rmem;
+		devstat->mem.vgrow  = curstat->mem.vmem   - prestat.mem.vmem;
+		devstat->mem.rgrow  = curstat->mem.rmem   - prestat.mem.rmem;
+
+		devstat->mem.minflt = 
+			subcount(curstat->mem.minflt, prestat.mem.minflt);
+		devstat->mem.majflt =
+			subcount(curstat->mem.majflt, prestat.mem.majflt);
+
+		devstat->net.tcpsnd =
+			subcount(curstat->net.tcpsnd, prestat.net.tcpsnd);
+		devstat->net.tcpssz =
+			subcount(curstat->net.tcpssz, prestat.net.tcpssz);
+		devstat->net.tcprcv =
+			subcount(curstat->net.tcprcv, prestat.net.tcprcv);
+		devstat->net.tcprsz =
+			subcount(curstat->net.tcprsz, prestat.net.tcprsz);
+		devstat->net.udpsnd =
+			subcount(curstat->net.udpsnd, prestat.net.udpsnd);
+		devstat->net.udpssz =
+			subcount(curstat->net.udpssz, prestat.net.udpssz);
+		devstat->net.udprcv =
+			subcount(curstat->net.udprcv, prestat.net.udprcv);
+		devstat->net.udprsz =
+			subcount(curstat->net.udprsz, prestat.net.udprsz);
+		devstat->net.rawsnd =
+			subcount(curstat->net.rawsnd, prestat.net.rawsnd);
+		devstat->net.rawrcv =
+			subcount(curstat->net.rawrcv, prestat.net.rawrcv);
+
 		d++;
 	}
 
 	/*
 	** calculate deviations per exited process
 	*/
-	if (nexit > 0 && supportflags&NETATOPD)
-	{
-		if (eproc->gen.pid)
-			hashtype = 'p';
-		else
-			hashtype = 'b';
-
-		netatop_exithash(hashtype);
-	}
-
 	for (c=0; c < nexit; c++)
 	{
 		/*
@@ -371,9 +387,9 @@ deviatproc(struct tstat *aproc, int npresent,
 
 		if (curstat->gen.pid)	/* acctrecord contains pid? */
 		{
-			if ( pdb_gettask(curstat->gen.pid, 1,
+			if ( pdb_getproc(curstat->gen.pid,
 			                 curstat->gen.btime, &pinfo))
-					prestat = pinfo->tstat;
+					prestat = pinfo->pstat;
 				else
 					memset(&prestat, 0, sizeof(prestat));
 		}
@@ -394,7 +410,7 @@ deviatproc(struct tstat *aproc, int npresent,
 				** against this exited one
 				*/
 				if ( pdb_srchresidue(curstat, &pinfo) )
-					prestat = pinfo->tstat;
+					prestat = pinfo->pstat;
 				else
 					memset(&prestat, 0, sizeof(prestat));
 		 	}
@@ -404,7 +420,6 @@ deviatproc(struct tstat *aproc, int npresent,
 		** now do the calculations
 		*/
 		devstat = dproc+d;
-		memset(devstat, 0, sizeof *devstat);
 
 		devstat->gen        = curstat->gen;
 
@@ -416,6 +431,81 @@ deviatproc(struct tstat *aproc, int npresent,
 
 		strcpy(devstat->gen.cmdline, prestat.gen.cmdline);
 
+		devstat->cpu.nice     = 0;
+		devstat->cpu.prio     = 0;
+		devstat->cpu.rtprio   = 0;
+		devstat->cpu.policy   = 0;
+		devstat->cpu.curcpu   = 0;
+		devstat->cpu.sleepavg = 0;
+
+		if (supportflags & PATCHACCT)
+		{
+			devstat->net.tcpsnd = curstat->net.tcpsnd -
+			                      prestat.net.tcpsnd;
+			devstat->net.tcpssz = curstat->net.tcpssz -
+			                      prestat.net.tcpssz;
+			devstat->net.tcprcv = curstat->net.tcprcv -
+			                      prestat.net.tcprcv;
+			devstat->net.tcprsz = curstat->net.tcprsz -
+			                      prestat.net.tcprsz;
+			devstat->net.udpsnd = curstat->net.udpsnd -
+			                      prestat.net.udpsnd;
+			devstat->net.udpssz = curstat->net.udpssz -
+			                      prestat.net.udpssz;
+			devstat->net.udprcv = curstat->net.udprcv -
+			                      prestat.net.udprcv;
+			devstat->net.udprsz = curstat->net.udprsz -
+			                      prestat.net.udprsz;
+			devstat->net.rawsnd = curstat->net.rawsnd -
+			                      prestat.net.rawsnd;
+			devstat->net.rawrcv = curstat->net.rawrcv -
+			                      prestat.net.rawrcv;
+			devstat->dsk.rio    = curstat->dsk.rio    -
+			                      prestat.dsk.rio;
+			devstat->dsk.rsz    = curstat->dsk.rsz    -
+			                      prestat.dsk.rsz;
+			devstat->dsk.wio    = curstat->dsk.wio    -
+			                      prestat.dsk.wio;
+			devstat->dsk.wsz    = curstat->dsk.wsz    -
+			                      prestat.dsk.wsz;
+			devstat->dsk.cwsz   = curstat->dsk.cwsz    -
+			                      prestat.dsk.cwsz;
+			devstat->mem.vmem   = 0;
+			devstat->mem.rmem   = 0;
+			devstat->mem.vgrow  = -curstat->mem.vmem;
+			devstat->mem.rgrow  = -curstat->mem.rmem;
+		}
+		else
+		{
+			devstat->net.tcpsnd   = 0;
+			devstat->net.tcpssz   = 0;
+			devstat->net.tcprcv   = 0;
+			devstat->net.tcprsz   = 0;
+			devstat->net.udpsnd   = 0;
+			devstat->net.udpssz   = 0;
+			devstat->net.udprcv   = 0;
+			devstat->net.udprsz   = 0;
+			devstat->net.rawsnd   = 0;
+			devstat->net.rawrcv   = 0;
+			devstat->mem.vmem     = 0;
+			devstat->mem.rmem     = 0;
+			devstat->mem.vgrow    = 0;
+			devstat->mem.rgrow    = 0;
+			devstat->dsk.wio      = 0;
+			devstat->dsk.wsz      = 0;
+			devstat->dsk.cwsz     = 0;
+			devstat->dsk.rsz      = 0;
+			devstat->dsk.rio      = curstat->dsk.rio  -
+						prestat.dsk.rio   -
+						prestat.dsk.wio;
+		}
+
+		devstat->cpu.stime  = curstat->cpu.stime  - prestat.cpu.stime;
+		devstat->cpu.utime  = curstat->cpu.utime  - prestat.cpu.utime;
+		devstat->mem.minflt = curstat->mem.minflt - prestat.mem.minflt;
+		devstat->mem.majflt = curstat->mem.majflt - prestat.mem.majflt;
+		devstat->mem.shtext = 0;
+
 		/*
 		** due to the strange exponent-type storage of values
 		** in the process accounting record, the resource-value
@@ -423,44 +513,45 @@ deviatproc(struct tstat *aproc, int npresent,
 		** stored value of the last registered sample; in that
 		** case the deviation should be set to zero
 		*/
-		if (curstat->cpu.stime > prestat.cpu.stime)
-			devstat->cpu.stime  = curstat->cpu.stime -
-			                      prestat.cpu.stime;
+		if (devstat->cpu.stime < 0)
+			devstat->cpu.stime = 0;
+		if (devstat->cpu.utime < 0)
+			devstat->cpu.utime = 0;
+		if (devstat->dsk.rio    < 0)
+			devstat->dsk.rio   = 0;
+		if (devstat->dsk.rsz    < 0)
+			devstat->dsk.rsz   = 0;
+		if (devstat->dsk.wio    < 0)
+			devstat->dsk.wio   = 0;
+		if (devstat->dsk.wsz    < 0)
+			devstat->dsk.wsz   = 0;
+		if (devstat->dsk.cwsz    < 0)
+			devstat->dsk.cwsz   = 0;
+		if (devstat->mem.minflt < 0)
+			devstat->mem.minflt = 0;
+		if (devstat->mem.majflt < 0)
+			devstat->mem.majflt = 0;
 
-		if (curstat->cpu.utime > prestat.cpu.utime)
-			devstat->cpu.utime  = curstat->cpu.utime -
-			                      prestat.cpu.utime;
-
-		if (curstat->mem.minflt > prestat.mem.minflt)
-			devstat->mem.minflt = curstat->mem.minflt - 
-			                      prestat.mem.minflt;
-
-		if (curstat->mem.majflt > prestat.mem.majflt)
-			devstat->mem.majflt = curstat->mem.majflt -
-			                      prestat.mem.majflt;
-
-		if (curstat->dsk.rio > (prestat.dsk.rio + prestat.dsk.wio))
-			devstat->dsk.rio    = curstat->dsk.rio  -
-			                      prestat.dsk.rio   -
-			                      prestat.dsk.wio;
-
-		/*
-		** try to match the network counters of netatop
-		*/
-		if (supportflags & NETATOPD)
+		if (supportflags & PATCHACCT)
 		{
-			unsigned long	val = (hashtype == 'p' ?
-						curstat->gen.pid :
-						curstat->gen.btime);
-
-			netatop_exitfind(val, devstat, &prestat);
+			if (devstat->net.tcpsnd < 0)
+				 devstat->net.tcpsnd = 0;
+			if (devstat->net.tcprcv < 0)
+				 devstat->net.tcprcv = 0;
+			if (devstat->net.udpsnd < 0)
+				 devstat->net.udpsnd = 0;
+			if (devstat->net.udprcv < 0)
+				 devstat->net.udprcv = 0;
+			if (devstat->net.rawsnd < 0)
+				 devstat->net.rawsnd = 0;
+			if (devstat->net.rawrcv < 0)
+				 devstat->net.rawrcv = 0;
 		}
 
 		d++;
-		(*nactproc)++;
 
 		if (prestat.gen.pid > 0)
-			pdb_deltask(prestat.gen.pid, prestat.gen.isproc);
+			pdb_delproc(prestat.gen.pid);
 	}
 
 	/*
@@ -469,125 +560,6 @@ deviatproc(struct tstat *aproc, int npresent,
 	pdb_cleanresidue();
 
 	return d;
-}
-
-/*
-** calculate the differences between the current sample and
-** the previous sample for a task
-*/
-static void
-calcdiff(struct tstat *devstat, struct tstat *curstat, struct tstat *prestat,
-	                                      char newtask, count_t totusedcpu)
-{
-	devstat->gen          = curstat->gen;
-
-	if (newtask)
-		devstat->gen.excode |= ~(INT_MAX);
-
-	devstat->cpu.nice     = curstat->cpu.nice;
-	devstat->cpu.prio     = curstat->cpu.prio;
-	devstat->cpu.rtprio   = curstat->cpu.rtprio;
-	devstat->cpu.policy   = curstat->cpu.policy;
-	devstat->cpu.curcpu   = curstat->cpu.curcpu;
-	devstat->cpu.sleepavg = curstat->cpu.sleepavg;
-
-	devstat->cpu.stime  = 
-		subcount(curstat->cpu.stime, prestat->cpu.stime);
-	devstat->cpu.utime  =
-		subcount(curstat->cpu.utime, prestat->cpu.utime);
-
-	/*
-	** particular kernel versions sometimes supply a smaller
-	** amount for consumed CPU-ticks than a previous sample;
-	** with unsigned calculations this results in 497 days of
-	** CPU-consumption so a sanity-check is needed here...
-	*/
-	if (devstat->cpu.stime > totusedcpu)
-		devstat->cpu.stime = 1;
-
-	if (devstat->cpu.utime > totusedcpu)
-		devstat->cpu.utime = 1;
-
-	/*
-	** do further calculations
-	*/
-	devstat->dsk.rio    =
-		subcount(curstat->dsk.rio, prestat->dsk.rio);
-	devstat->dsk.rsz    =
-		subcount(curstat->dsk.rsz, prestat->dsk.rsz);
-	devstat->dsk.wio    =
-		subcount(curstat->dsk.wio, prestat->dsk.wio);
-	devstat->dsk.wsz    =
-		subcount(curstat->dsk.wsz, prestat->dsk.wsz);
-	devstat->dsk.cwsz   =
-		subcount(curstat->dsk.cwsz, prestat->dsk.cwsz);
-
-	devstat->mem.vexec  = curstat->mem.vexec;
-	devstat->mem.vmem   = curstat->mem.vmem;
-	devstat->mem.rmem   = curstat->mem.rmem;
-	devstat->mem.vgrow  = curstat->mem.vmem   - prestat->mem.vmem;
-	devstat->mem.rgrow  = curstat->mem.rmem   - prestat->mem.rmem;
-	devstat->mem.vdata  = curstat->mem.vdata;
-	devstat->mem.vstack = curstat->mem.vstack;
-	devstat->mem.vlibs  = curstat->mem.vlibs;
-	devstat->mem.vswap  = curstat->mem.vswap;
-
-	devstat->mem.minflt = 
-		subcount(curstat->mem.minflt, prestat->mem.minflt);
-	devstat->mem.majflt =
-		subcount(curstat->mem.majflt, prestat->mem.majflt);
-
-	/*
- 	** network counters: due to an unload/load of the netatop module,
-	** previous counters might be larger than the current
-	*/
-	if (curstat->net.tcpsnd >= prestat->net.tcpsnd)
-		devstat->net.tcpsnd =
-			subcount(curstat->net.tcpsnd, prestat->net.tcpsnd);
-	else
-		devstat->net.tcpsnd = curstat->net.tcpsnd;
-
-	if (curstat->net.tcpssz >= prestat->net.tcpssz)
-		devstat->net.tcpssz =
-			subcount(curstat->net.tcpssz, prestat->net.tcpssz);
-	else
-		devstat->net.tcpssz = curstat->net.tcpssz;
-
-	if (curstat->net.tcprcv >= prestat->net.tcprcv)
-		devstat->net.tcprcv =
-			subcount(curstat->net.tcprcv, prestat->net.tcprcv);
-	else
-		devstat->net.tcprcv = curstat->net.tcprcv;
-
-	if (curstat->net.tcprsz >= prestat->net.tcprsz)
-		devstat->net.tcprsz =
-			subcount(curstat->net.tcprsz, prestat->net.tcprsz);
-	else
-		devstat->net.tcprsz = curstat->net.tcprsz;
-
-	if (curstat->net.udpsnd >= prestat->net.udpsnd)
-		devstat->net.udpsnd =
-			subcount(curstat->net.udpsnd, prestat->net.udpsnd);
-	else
-		devstat->net.udpsnd = curstat->net.udpsnd;
-
-	if (curstat->net.udpssz >= prestat->net.udpssz)
-		devstat->net.udpssz =
-			subcount(curstat->net.udpssz, prestat->net.udpssz);
-	else
-		devstat->net.udpssz = curstat->net.udpssz;
-
-	if (curstat->net.udprcv >= prestat->net.udprcv)
-		devstat->net.udprcv =
-			subcount(curstat->net.udprcv, prestat->net.udprcv);
-	else
-		devstat->net.udprcv = curstat->net.udprcv;
-
-	if (curstat->net.udprsz >= prestat->net.udprsz)
-		devstat->net.udprsz =
-			subcount(curstat->net.udprsz, prestat->net.udprsz);
-	else
-		devstat->net.udprsz = curstat->net.udprsz;
 }
 
 /*
@@ -663,7 +635,6 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 	dev->mem.freemem	= cur->mem.freemem;
 	dev->mem.buffermem	= cur->mem.buffermem;
 	dev->mem.slabmem	= cur->mem.slabmem;
-	dev->mem.slabreclaim	= cur->mem.slabreclaim;
 	dev->mem.committed	= cur->mem.committed;
 	dev->mem.commitlim	= cur->mem.commitlim;
 	dev->mem.cachemem	= cur->mem.cachemem;
@@ -671,14 +642,9 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 	dev->mem.totswap	= cur->mem.totswap;
 	dev->mem.freeswap	= cur->mem.freeswap;
 
-	dev->mem.shmem		= cur->mem.shmem;
-	dev->mem.shmrss		= cur->mem.shmrss;
-	dev->mem.shmswp		= cur->mem.shmswp;
-
 	dev->mem.swouts		= subcount(cur->mem.swouts,  pre->mem.swouts);
 	dev->mem.swins		= subcount(cur->mem.swins,   pre->mem.swins);
 	dev->mem.pgscans	= subcount(cur->mem.pgscans, pre->mem.pgscans);
-	dev->mem.pgsteal	= subcount(cur->mem.pgsteal, pre->mem.pgsteal);
 	dev->mem.allocstall	= subcount(cur->mem.allocstall,
 				                         pre->mem.allocstall);
 
@@ -799,12 +765,11 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 			** take care that interface properties are
 			** corrected for future samples
 			*/
-                        regainrootprivs();	/* get root privileges      */
+                        seteuid(0);		/* get root privileges      */
 
 		        initifprop();		/* refresh interface info   */
 
-			if (! droprootprivs())  /* drop setuid-root privs   */
-				cleanstop(42);
+                        seteuid( getuid() );	/* release root privileges  */
 
 			for (j=0; cur->intf.intf[j].name[0]; j++)
 			{
@@ -910,11 +875,17 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 		                                  pre->dsk.dsk[j].nrsect);
 		dev->dsk.dsk[i].nwsect = subcount(cur->dsk.dsk[i].nwsect,
 		                                  pre->dsk.dsk[j].nwsect);
+#ifdef linux
 		dev->dsk.dsk[i].io_ms  = subcount(cur->dsk.dsk[i].io_ms,
 		                                  pre->dsk.dsk[j].io_ms);
 		dev->dsk.dsk[i].avque  = subcount(cur->dsk.dsk[i].avque,
 		                                  pre->dsk.dsk[j].avque);
-
+#elif defined(FREEBSD)
+		/* FreeBSD provides absolute values */
+		dev->dsk.dsk[i].io_ms  = cur->dsk.dsk[i].io_ms;
+		dev->dsk.dsk[i].avque  = cur->dsk.dsk[i].avque;
+		dev->dsk.dsk[i].busy_pct = cur->dsk.dsk[i].busy_pct;
+#endif
 		/*
 		** determine new j
 		*/
@@ -1120,17 +1091,12 @@ totalsyst(char category, struct sstat *new, struct sstat *tot)
 		tot->mem.freemem	 = new->mem.freemem;
 		tot->mem.buffermem	 = new->mem.buffermem;
 		tot->mem.slabmem	 = new->mem.slabmem;
-		tot->mem.slabreclaim	 = new->mem.slabreclaim;
 		tot->mem.committed	 = new->mem.committed;
 		tot->mem.commitlim	 = new->mem.commitlim;
 		tot->mem.cachemem	 = new->mem.cachemem;
 		tot->mem.cachedrt	 = new->mem.cachedrt;
 		tot->mem.totswap	 = new->mem.totswap;
 		tot->mem.freeswap	 = new->mem.freeswap;
-
-		tot->mem.shmem		 = new->mem.shmem;
-		tot->mem.shmrss		 = new->mem.shmrss;
-		tot->mem.shmswp		 = new->mem.shmswp;
 
 		tot->mem.swouts		+= new->mem.swouts;
 		tot->mem.swins		+= new->mem.swins;

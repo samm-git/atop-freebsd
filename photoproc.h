@@ -24,16 +24,15 @@
 */
 
 #define	PNAMLEN		15
-#define	CMDLEN		255
+#define	CMDLEN		150
 
 /* 
 ** structure containing only relevant process-info extracted 
 ** from kernel's process-administration
 */
-struct tstat {
-	/* GENERAL TASK INFO 					*/
+struct pstat {
+	/* GENERAL PROCESS INFO 					*/
 	struct gen {
-		int	tgid;		/* threadgroup identification 	*/
 		int	pid;		/* process identification 	*/
 		int	ppid;           /* parent process identification*/
 		int	ruid;		/* real  user  identification 	*/
@@ -44,9 +43,9 @@ struct tstat {
 		int	egid;		/* eff.  group identification 	*/
 		int	sgid;		/* saved group identification 	*/
 		int	fsgid;		/* fs    group identification 	*/
+		int	jid;		/* jail process identification 	*/
 		int	nthr;		/* number of threads in tgroup 	*/
 		char	name[PNAMLEN+1];/* process name string       	*/
-		char 	isproc;		/* boolean: process level?      */
 		char 	state;		/* process state ('E' = exited)	*/
 		int	excode;		/* process exit status		*/
 		time_t 	btime;		/* process start time (epoch)	*/
@@ -55,7 +54,7 @@ struct tstat {
 		int	nthrslpi;	/* # threads in state 'S'       */
 		int	nthrslpu;	/* # threads in state 'D'       */
 		int	nthrrun;	/* # threads in state 'R'       */
-		int	ifuture[4];     /* reserved                     */
+		int	ifuture[1];     /* reserved                     */
 	} gen;
 
 	/* CPU STATISTICS						*/
@@ -87,15 +86,12 @@ struct tstat {
 	struct mem {
 		count_t	minflt;		/* number of page-reclaims 	*/
 		count_t	majflt;		/* number of page-faults 	*/
-		count_t	vexec;		/* virtmem execfile (Kb)        */
-		count_t	vmem;		/* virtual  memory  (Kb)	*/
-		count_t	rmem;		/* resident memory  (Kb)	*/
-		count_t vgrow;		/* virtual  growth  (Kb)    	*/
-		count_t rgrow;		/* resident growth  (Kb)     	*/
-		count_t vdata;		/* virtmem data     (Kb)     	*/
-		count_t vstack;		/* virtmem stack    (Kb)     	*/
-		count_t vlibs;		/* virtmem libexec  (Kb)     	*/
-		count_t vswap;		/* swap space used  (Kb)     	*/
+		count_t	shtext;		/* text     memory (Kb)         */
+		count_t	vmem;		/* virtual  memory (Kb)		*/
+		count_t	rmem;		/* resident memory (Kb)		*/
+		count_t vgrow;		/* virtual  growth (Kb)    	*/
+		count_t rgrow;		/* resident growth (Kb)     	*/
+		count_t	cfuture[4];	/* reserved for future use	*/
 	} mem;
 
 	/* NETWORK STATISTICS						*/
@@ -108,8 +104,8 @@ struct tstat {
 		count_t udpssz;		/* cumulative size packets sent	*/
 		count_t	udprcv;		/* number of UDP-packets recved	*/
 		count_t udprsz;		/* cumulative size packets sent	*/
-		count_t	avail1;		/* */
-		count_t	avail2;		/* */
+		count_t	rawsnd;		/* number of raw packets sent	*/
+		count_t	rawrcv;		/* number of raw packets recved	*/
 		count_t	cfuture[4];	/* reserved for future use	*/
 	} net;
 };
@@ -119,27 +115,25 @@ struct pinfo {
 	struct pinfo	*prnext;	/* next process in residue chain */
 	struct pinfo	*prprev;	/* prev process in residue chain */
 
-	struct tstat	tstat;		/* per-process statistics        */
+	struct pstat	pstat;		/* per-process statistics        */
 };
 
 /*
 ** prototypes of process-database functions
 */
-int		pdb_gettask(int, char, time_t, struct pinfo **);
-void		pdb_addtask(int, struct pinfo *);
-int		pdb_deltask(int, char);
+int		pdb_getproc(int, time_t, struct pinfo **);
+void		pdb_addproc(int, struct pinfo *);
+int		pdb_delproc(int);
+int		pdb_newproc(struct pinfo **);
 int		pdb_makeresidue(void);
 int		pdb_cleanresidue(void);
-int		pdb_srchresidue(struct tstat *, struct pinfo **);
+int		pdb_srchresidue(struct pstat *, struct pinfo **);
 
 /*
 ** prototypes for raw process-statistics functions
 */
-struct netpertask;
-
-int		deviatproc(struct tstat *, int, struct tstat *, int, int,
-				struct tstat *, struct sstat *, unsigned int *,
-				int *, int *, int *, int *, int *);
-
-int		photoproc(struct tstat *, int);
+int		deviatproc(struct pstat *, int, struct pstat *, int, int,
+				struct pstat *, struct sstat *,
+				int *, int *, int *, int *);
+int		photoproc(struct pstat *, int);
 unsigned int	countprocs(void);

@@ -32,27 +32,13 @@ struct syscap {
 	count_t	availnet;
 };
 
-struct pselection {
+struct selection {
 	char	username[256];
 	uid_t	userid[MAXUSERSEL];
 
-	char	progname[64];
-	int	prognamesz;
-	regex_t	progregex;
-};
-
-struct sselection {
-	char	lvmname[64];	// logical volume selection
-	int	lvmnamesz;
-	regex_t	lvmregex;
-
-	char	dskname[64];	// disk selection
-	int	dsknamesz;
-	regex_t	dskregex;
-
-	char	itfname[64];	// network interface selection
-	int	itfnamesz;
-	regex_t	itfregex;
+	char	procname[64];
+	int	procnamesz;
+	regex_t	procregex;
 };
 
 /*
@@ -61,7 +47,6 @@ struct sselection {
 #define	COLORLOW	2
 #define	COLORMED	3
 #define	COLORHIGH	4
-#define	COLORTHR	5
 
 /*
 ** list with keystrokes/flags
@@ -84,15 +69,12 @@ struct sselection {
 #define	MSORTNET	'N'
 #define	MSORTAUTO	'A'
 
-#define	MTHREAD		'y'
 #define	MCOLORS		'x'
 #define	MSYSFIXED	'f'
-#define	MSYSNOSORT	'F'
 #define	MSYSLIMIT	'l'
 
-#define	MSELUSER	'U'
 #define	MSELPROC	'P'
-#define	MSELSYS		'S'
+#define	MSELUSER	'U'
 
 #define	MALLPROC	'a'
 #define	MKILLPROC	'k'
@@ -114,22 +96,22 @@ struct sselection {
 /*
 ** general function prototypes
 */
-void	totalcap   (struct syscap *, struct sstat *, struct tstat **, int);
-void	pricumproc (struct sstat *,  struct tstat **, int, int, int,
-			int, int, int, int, int, unsigned int, int, int);
+void	totalcap   (struct syscap *, struct sstat *, struct pstat *, int);
+void	pricumproc (struct pstat *,  struct sstat *, int, int, int, int, 
+             				   	int, int, int, int, int);
 
-void	showgenproc(struct tstat *, double, int, int);
-void	showmemproc(struct tstat *, double, int, int);
-void	showdskproc(struct tstat *, double, int, int);
-void	shownetproc(struct tstat *, double, int, int);
-void	showvarproc(struct tstat *, double, int, int);
-void	showschproc(struct tstat *, double, int, int);
-void	showtotproc(struct tstat *, double, int, int);
-void	showcmdproc(struct tstat *, double, int, int);
+void	showgenproc(struct pstat *, double, int, int);
+void	showmemproc(struct pstat *, double, int, int);
+void	showdskproc(struct pstat *, double, int, int);
+void	shownetproc(struct pstat *, double, int, int);
+void	showvarproc(struct pstat *, double, int, int);
+void	showschproc(struct pstat *, double, int, int);
+void	showtotproc(struct pstat *, double, int, int);
+void	showcmdproc(struct pstat *, double, int, int);
 
 void	printg     (const char *, ...);
-int	prisyst(struct sstat  *, int, int, int, int, struct sselection *,
-			char *, int, int, int, int, int);
-int	priproc(struct tstat  **, int, int, int, int, int, char, char,
-	        struct syscap *, int, int);
-void	priphead(int, int, char *, char *, char);
+int	prisyst(struct sstat  *, int, int, int, int, int, char *,
+                int, int, int, int, int);
+int	priproc(struct pstat  *, int, int, int, int, int, char, char,
+	        struct syscap *, struct selection *, int, int);
+void	priphead(int, int, char, char, char);
