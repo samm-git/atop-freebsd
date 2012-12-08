@@ -178,6 +178,7 @@ static const char rcsid[] = "$Id: photosyst.c,v 1.38 2010/11/19 07:40:40 gerlof 
 
 #define	MAXCNT	64
 
+#ifdef linux
 /* return value of isdisk() */
 #define	NONTYPE	0
 #define	DSKTYPE	1
@@ -186,7 +187,6 @@ static const char rcsid[] = "$Id: photosyst.c,v 1.38 2010/11/19 07:40:40 gerlof 
 
 static int	isdisk(unsigned int, unsigned int,
 			char *, struct perdsk *, int);
-
 static struct ipv6_stats	ipv6_tmp;
 static struct icmpv6_stats	icmpv6_tmp;
 static struct udpv6_stats	udpv6_tmp;
@@ -263,7 +263,50 @@ static struct v6tab 		v6tab[] = {
 };
 
 static int	v6tab_entries = sizeof(v6tab)/sizeof(struct v6tab);
+#endif
 
+#ifdef FREEBSD
+#include <sys/socketvar.h>
+#include <sys/param.h>
+#include <sys/sysctl.h> 
+#include <sys/errno.h> 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/sysctl.h>
+#include <sys/time.h>
+#include <net/if.h>
+#include <net/if_mib.h>
+#include <netinet/in_systm.h>
+#include <netinet/ip.h>
+#include <netinet/ip_var.h>
+#include <netinet/ip_icmp.h>
+#include <netinet/icmp_var.h>
+#include <netinet/udp.h>
+#include <netinet/udp_var.h>
+
+#include <netinet/in_pcb.h>
+#include <netinet/tcp.h>
+#include <netinet/tcp_var.h>
+#include <netinet/tcp_timer.h>
+#include <netinet/tcp_fsm.h>
+
+#include <netinet/ip6.h>
+#include <netinet6/ip6_var.h>
+#include <netinet/icmp6.h>
+
+#define GETSYSCTL(name, var) getsysctl(name, &(var), sizeof(var))
+#include <sys/user.h>
+#include <kvm.h>
+#include <devstat.h>
+#include <err.h>
+#include <ctype.h>
+
+extern  kvm_t *kd;
+struct device_selection *dev_select;
+struct statinfo cur_statinfo, last_statinfo;
+#endif
+
+#ifdef linux
 void
 photosyst(struct sstat *si)
 {
@@ -1029,7 +1072,614 @@ photosyst(struct sstat *si)
 		wwwvalid = getwwwstat(80, &(si->www));
 #endif
 }
+#elif defined(FREEBSD)
+static void
+getsysctl(const char *name, void *ptr, size_t len)
+{
+    size_t nlen = len;
 
+    if (sysctlbyname(name, ptr, &nlen, NULL, 0) == -1) {
+	if(errno == ENOENT || errno == ENXIO)
+	    return; /* silently return if sysctl not found  or not configured*/
+	fprintf(stderr, "atop: sysctl(%s...) failed: %s (%d)\n", name,
+	    strerror(errno), errno);
+	exit(1);
+    }
+    if (nlen != len) {
+	fprintf(stderr, "atop: sysctl(%s...) expected %lu, got %lu\n",
+	    name, (unsigned long)len, (unsigned long)nlen);
+	exit(1);
+    }
+}
+
+void
+photosyst(struct sstat *si)
+{
+	register int	i;
+#if	HTTPSTATS
+	static int	wwwvalid = 1;
+#endif
+
+	struct loadavg
+	{
+	  unsigned int ldavg[3];
+	  long fscale;
+	};
+	struct loadavg sysload;
+
+	memset(si, 0, sizeof(struct sstat));
+
+	int ncpu = 0, maxcpus = 0, cur = 0;
+	size_t size;
+	unsigned int ticks = (unsigned int)sysconf(_SC_CLK_TCK),
+	    multiplier = ((uint64_t)1000L / ticks);
+	
+	GETSYSCTL("hw.ncpu", ncpu);
+	if(ncpu)
+	    si->cpu.nrcpu = ncpu;
+	if (si->cpu.nrcpu == 0)
+		si->cpu.nrcpu = 1;
+	int forks = 0;
+	GETSYSCTL("vm.stats.vm.v_forkpages", forks);
+	si->cpu.nprocs = forks;
+	GETSYSCTL("kern.smp.maxcpus", maxcpus);
+	
+	size = maxcpus * CPUSTATES * sizeof(long);
+	long cp_times[size];
+	sysctlbyname("kern.cp_times", &cp_times, &size, NULL, 0);
+	for (i = 0; i < ncpu; i++) {
+	    si->cpu.cpu[i].cpunr	= i;
+	    si->cpu.cpu[i].utime	= cp_times[CP_USER+cur] * multiplier;
+	    si->cpu.all.utime += si->cpu.cpu[i].utime;
+	    
+	    si->cpu.cpu[i].ntime	= cp_times[CP_NICE+cur] * multiplier;
+	    si->cpu.all.ntime += si->cpu.cpu[i].ntime;
+	    
+	    si->cpu.cpu[i].stime	= cp_times[CP_SYS+cur] * multiplier;
+	    si->cpu.all.stime += si->cpu.cpu[i].stime;
+	    
+	    si->cpu.cpu[i].itime	= cp_times[CP_IDLE+cur] * multiplier;
+	    si->cpu.all.itime += si->cpu.cpu[i].itime;
+
+	    si->cpu.cpu[i].Itime	= cp_times[CP_INTR+cur] * multiplier;
+	    si->cpu.all.Itime += si->cpu.cpu[i].Itime;
+	    
+	    cur+=CPUSTATES;
+	    
+	}
+        
+
+	GETSYSCTL("vm.loadavg", sysload);
+	/* convert load averages to doubles */
+	si->cpu.lavg1	= (double) sysload.ldavg[0] / sysload.fscale;
+	si->cpu.lavg5	= (double) sysload.ldavg[1] / sysload.fscale;
+	si->cpu.lavg15	= (double) sysload.ldavg[2] / sysload.fscale;
+	
+	int devint = 0, csw = 0;
+	GETSYSCTL("vm.stats.sys.v_intr", devint);
+	if(devint)
+	    si->cpu.devint = devint;
+	GETSYSCTL("vm.stats.sys.v_swtch", csw);
+	if(csw)
+	    si->cpu.csw = csw;
+
+	/*
+	** gather frequency scaling info.
+	** store them in binary form
+	*/
+        int clockrate = 0, curclock = 0;
+	
+	/* default method, always available */
+	GETSYSCTL("hw.clockrate", clockrate);
+	{
+	    char buf[1024];
+    	    size_t len = sizeof(buf);
+	    char *curptr;
+	    int freq = 0, tmpfreq = 0;
+	
+	    if (sysctlbyname("dev.cpu.0.freq_levels", buf, &len, NULL, 0) == -1)
+	        buf[0] = '\0';
+	    curptr = buf;
+	    while (isdigit(curptr[0])) {
+		freq = strtol(curptr, &curptr, 10);
+		if (freq > tmpfreq)
+		    tmpfreq = freq;
+	        /* Skip the rest of this entry */
+		 while (!isspace(curptr[0]) && curptr[0] != '\0')
+		    curptr++;
+		/* Find the next entry */
+		while (!isdigit(curptr[0]) && curptr[0] != '\0')
+		    curptr++;
+	    }
+	    if(tmpfreq)
+		clockrate = tmpfreq;
+	}
+	/* there is always dev.cpu.0, see powerd src */
+	GETSYSCTL("dev.cpu.0.freq", curclock); 
+        for (i = 0; i < si->cpu.nrcpu; ++i)
+        {
+                si->cpu.cpu[i].freqcnt.maxfreq	= clockrate;
+                if (curclock) /* cpufreq(4) detected */
+            	    si->cpu.cpu[i].freqcnt.cnt = curclock;
+            	else
+            	    si->cpu.cpu[i].freqcnt.cnt = clockrate;
+                si->cpu.cpu[i].freqcnt.ticks = 0;
+        }
+
+	si->mem.physmem	 	= (count_t)-1; 
+	si->mem.freemem		= (count_t)-1;
+	si->mem.buffermem	= (count_t)-1;
+	si->mem.cachemem  	= (count_t)-1;
+	si->mem.slabmem		= (count_t) 0;
+	si->mem.totswap  	= (count_t)-1;
+	si->mem.freeswap 	= (count_t)-1;
+	si->mem.committed 	= (count_t) 0;
+
+	long physmem = 0;
+	/* 
+	* FreeBSD provides 5 lists: Wired, Active, Inactive, Cache and Free 
+	* Mapping is: mem.freemem = Free, mem.cachedrt = Inactive, 
+	* mem.cachemem = Cache, mem.buffermem = Wired, mem.slabmem = Active
+	*/
+	
+	unsigned int freemem = 0, cachemem = 0, inactivemem = 0, wiremem = 0, activemem = 0;
+	GETSYSCTL("hw.physmem", physmem);
+	if(physmem)
+	    si->mem.physmem=physmem/pagesize;
+	/*  number of bytes free */
+	GETSYSCTL("vm.stats.vm.v_free_count", freemem);
+	if(freemem)
+	    si->mem.freemem=freemem;
+	/*
+	*  number of clean bytes caching data that are available for
+	*  immediate reallocation
+	*/
+	GETSYSCTL("vm.stats.vm.v_cache_count", cachemem);
+	if(cachemem)
+	    si->mem.cachemem=cachemem;
+	/* number of bytes inactive, store in cachedrt */
+	GETSYSCTL("vm.stats.vm.v_inactive_count", inactivemem);
+	if(inactivemem)
+	    si->mem.cachedrt=inactivemem;
+	GETSYSCTL("vm.stats.vm.v_wire_count", wiremem);
+	if(wiremem) /*  number of bytes wired down, including cached file data pages */
+	    si->mem.buffermem=wiremem;
+	/*  number of bytes active */
+	GETSYSCTL("vm.stats.vm.v_active_count", activemem);
+	if(activemem) 
+	    si->mem.slabmem=activemem;
+
+	/* get swap information from kvm */
+	struct kvm_swap swapary[1];
+	i = kvm_getswapinfo(kd, swapary, 1, 0);
+	if (i >= 0 && swapary[0].ksw_total != 0){
+	    si->mem.totswap=swapary[0].ksw_total;
+	    si->mem.freeswap=swapary[0].ksw_total - swapary[0].ksw_used;
+	}
+	/* swap statistic */
+	int pswapin = 0, pswapout = 0;
+	GETSYSCTL("vm.stats.vm.v_swapin",pswapin);
+	if(pswapin)
+	    si->mem.swins = pswapin;
+	GETSYSCTL("vm.stats.vm.v_swapout",pswapout);
+	if(pswapout)
+	    si->mem.swouts = pswapout;
+	
+	static int num_devices = 0, num_selected, num_selections;
+	static char firstcall = 1;
+	
+	long generation;
+	long select_generation;
+	static char **specified_devices = NULL;
+	struct devstat_match *matches = NULL;
+	
+	/* fetchig disk statistic using devstat data */
+	if ((num_devices = devstat_getnumdevs(NULL)) > 0) { 
+	    /* we found active devices */
+	    if(firstcall) { /* initialize */
+		firstcall = 0;
+	        cur_statinfo.dinfo = (struct devinfo *)calloc(1, sizeof(struct devinfo));
+		if (cur_statinfo.dinfo == NULL)
+		    err(1, "calloc failed");
+		last_statinfo.dinfo = (struct devinfo *)calloc(1, sizeof(struct devinfo));
+			
+		if (last_statinfo.dinfo == NULL)
+		    err(1, "calloc failed");
+		/*
+		 * Grab all the devices.  We don't look to see if the list has
+		* changed here, since it almost certainly has.  We only look for
+		* errors.
+		 */
+		if (devstat_getdevs(NULL, &cur_statinfo) == -1)
+		    errx(1, "%s", devstat_errbuf);
+		num_devices = cur_statinfo.dinfo->numdevs;
+		generation = cur_statinfo.dinfo->generation;
+		dev_select = NULL;
+		
+		specified_devices = (char **)malloc(sizeof(char *));
+		/*
+		 * At this point, selectdevs will almost surely indicate that the
+	    	 * device list has changed, so we don't look for return values of 0
+	    	 * or 1.  If we get back -1, though, there is an error.
+		 */
+		if (devstat_selectdevs(&dev_select, &num_selected,
+	           &num_selections, &select_generation, generation,
+	           cur_statinfo.dinfo->devices, num_devices, matches,
+	           0, specified_devices,
+	           0, DS_SELECT_ADD, num_devices,
+	           0) == -1)
+			errx(1, "%s", devstat_errbuf);
+	    } /* firstcall */
+	    
+	    struct devinfo *tmp_dinfo;
+	    long double etime;
+	
+	    tmp_dinfo = last_statinfo.dinfo;
+	    last_statinfo.dinfo = cur_statinfo.dinfo;
+	    cur_statinfo.dinfo = tmp_dinfo;
+	    last_statinfo.snap_time = cur_statinfo.snap_time;
+	    
+	    /*
+	     * Here what we want to do is refresh our device stats.
+	     * devstat_getdevs() returns 1 when the device list has changed.
+	     * If the device list has changed, we want to go through
+	     * the selection process again, in case a device that we
+	     * were previously displaying has gone away.
+	     */
+	    switch (devstat_getdevs(NULL, &cur_statinfo)) {
+	    case -1:
+	    	errx(1, "%s", devstat_errbuf);
+	    	break;
+	    case 1: {
+	    	int retval;
+		num_devices = cur_statinfo.dinfo->numdevs;
+    		generation = cur_statinfo.dinfo->generation;
+		retval = devstat_selectdevs(&dev_select, &num_selected,
+				    &num_selections,
+				    &select_generation,
+				    generation,
+				    cur_statinfo.dinfo->devices,
+				    num_devices, matches,
+				    0,
+				    specified_devices,
+				    0,
+				    DS_SELECT_ADD, num_devices,
+				    0);
+		switch(retval) {
+		    case -1:
+	        	errx(1, "%s", devstat_errbuf);
+			break;
+		    default:
+			break;
+		}
+			break;
+		}
+	default:
+	break;
+	}
+	etime = cur_statinfo.snap_time - last_statinfo.snap_time;
+	if (etime == 0.0)
+		etime = 1.0;
+
+	int dn;
+
+	static int havelast = 0;
+	for (dn = 0; dn < num_devices; dn++) {
+	    if (dn >= MAXDSK-1)
+		break;
+	    int di;
+	    u_int64_t total_bytes_read, total_transfers_read;
+	    u_int64_t total_bytes_write, total_transfers_write;
+	    long double busy_pct;
+	    u_int64_t queue_len;
+	    long double ms_per_transaction;
+
+	    di = dev_select[dn].position;
+	    
+	    /* call first time to get calculated values for last period */
+	    if (devstat_compute_statistics(&cur_statinfo.dinfo->devices[di],
+	        havelast ? &last_statinfo.dinfo->devices[di] : NULL, etime,
+	        DSM_TOTAL_BYTES_READ, &total_bytes_read,
+	        DSM_TOTAL_BYTES_WRITE, &total_bytes_write,
+	        DSM_TOTAL_TRANSFERS_READ, &total_transfers_read,
+	        DSM_TOTAL_TRANSFERS_WRITE, &total_transfers_write,
+		DSM_MS_PER_TRANSACTION, &ms_per_transaction,
+		DSM_BUSY_PCT, &busy_pct,
+		DSM_QUEUE_LENGTH, &queue_len,
+		DSM_NONE) != 0)
+	    errx(1, "%s", devstat_errbuf);
+	    
+	    /* call second tme to get absolute values */
+	    if (devstat_compute_statistics(&cur_statinfo.dinfo->devices[di],
+	        NULL, etime,
+	        DSM_TOTAL_BYTES_READ, &total_bytes_read,
+	        DSM_TOTAL_BYTES_WRITE, &total_bytes_write,
+	        DSM_TOTAL_TRANSFERS_READ, &total_transfers_read,
+	        DSM_TOTAL_TRANSFERS_WRITE, &total_transfers_write,
+		DSM_NONE) != 0)
+	    errx(1, "%s", devstat_errbuf);
+	    
+	    snprintf(si->dsk.dsk[dn].name,MAXDKNAM-1,"%s%d",
+		cur_statinfo.dinfo->devices[di].device_name,cur_statinfo.dinfo->devices[di].unit_number);
+
+	    si->dsk.dsk[dn].nread=total_transfers_read;
+	    si->dsk.dsk[dn].nwrite=total_transfers_write;
+
+	    si->dsk.dsk[dn].nrsect=total_bytes_read * 2 / 1024;
+	    si->dsk.dsk[dn].nwsect=total_bytes_write * 2 / 1024;
+	    if(havelast) {
+		si->dsk.dsk[dn].busy_pct = (float)busy_pct;
+		si->dsk.dsk[dn].io_ms = ms_per_transaction * 1000;
+		si->dsk.dsk[dn].avque=queue_len; /* it is not the same data as in Linux */
+	    }
+	}
+	dn++;
+	havelast = 1;
+	
+	si->dsk.dsk[dn].name[0] = '\0'; /* set terminator for table */
+	si->dsk.ndsk = dn;
+	}
+	
+	int ifcount = 0, curint = 0;
+	size_t len;
+	struct ifmibdata ifmd;
+	
+	
+	GETSYSCTL("net.link.generic.system.ifcount", ifcount);
+	int name[6];
+	for (i = 1; i <= ifcount; i++){
+	    name[0] = CTL_NET;
+	    name[1] = PF_LINK;
+	    name[2] = NETLINK_GENERIC;
+	    name[3] = IFMIB_IFDATA;
+	    name[4] = i;
+	    name[5] = IFDATA_GENERAL;
+	    len = sizeof(ifmd);
+	    if(sysctl(name, 6, &ifmd, &len, (void *)0, 0)==0){
+		if(!(ifmd.ifmd_flags & IFF_UP)) 
+		    continue; /* interface is down, ignore */
+		strncpy(si->intf.intf[curint].name, ifmd.ifmd_name, sizeof((struct perintf *)NULL)->name - 1);
+		si->intf.intf[curint].rbyte=ifmd.ifmd_data.ifi_ibytes;
+		si->intf.intf[curint].sbyte=ifmd.ifmd_data.ifi_obytes;
+		si->intf.intf[curint].rpack=ifmd.ifmd_data.ifi_ipackets;
+		si->intf.intf[curint].spack=ifmd.ifmd_data.ifi_opackets;
+		si->intf.intf[curint].rerrs=ifmd.ifmd_data.ifi_ierrors;
+		si->intf.intf[curint].serrs=ifmd.ifmd_data.ifi_oerrors;
+		si->intf.intf[curint].scollis=ifmd.ifmd_data.ifi_oerrors;
+		si->intf.intf[curint].rdrop=ifmd.ifmd_data.ifi_collisions;
+		si->intf.intf[curint].rmultic=ifmd.ifmd_data.ifi_imcasts;
+		if (++curint >= MAXINTF-1)
+		    break;
+	    }
+	}
+	si->intf.intf[curint].name[0] = '\0'; // set terminator for table 
+	si->intf.nrintf = curint;
+	
+	/* ipv4 statistic */
+	struct ipstat ipstat;
+	len = sizeof ipstat;
+	int def_ttl = 0;
+	int ip_forwarding = 0;
+	
+
+        if (!sysctlbyname("net.inet.ip.stats", &ipstat, &len, 0, 0)) {
+	    GETSYSCTL("net.inet.ip.forwarding", ip_forwarding);
+	    si->net.ipv4.Forwarding = ip_forwarding;
+	    GETSYSCTL("net.inet.ip.ttl", def_ttl);
+	    si->net.ipv4.DefaultTTL = def_ttl;
+	    si->net.ipv4.InReceives = ipstat.ips_total;
+	    si->net.ipv4.InHdrErrors =  ipstat.ips_badsum + ipstat.ips_tooshort
+					+ ipstat.ips_toosmall + ipstat.ips_badhlen
+					+ ipstat.ips_badlen;
+	    si->net.ipv4.InAddrErrors = ipstat.ips_cantforward;
+	    si->net.ipv4.ForwDatagrams = ipstat.ips_forward;
+	    si->net.ipv4.InUnknownProtos = ipstat.ips_noproto;
+	    si->net.ipv4.InDiscards = ipstat.ips_cantforward; /* ?? */
+	    si->net.ipv4.InDelivers = ipstat.ips_delivered;
+	    si->net.ipv4.OutRequests = ipstat.ips_localout; 
+	    si->net.ipv4.OutDiscards = ipstat. ips_odropped;
+	    si->net.ipv4.OutNoRoutes = ipstat.ips_noroute;
+	    si->net.ipv4.ReasmTimeout = ipstat.ips_fragtimeout;
+	    si->net.ipv4.ReasmOKs  = ipstat.ips_reassembled;
+	    si->net.ipv4.ReasmFails = ipstat.ips_fragdropped + ipstat.ips_fragtimeout;
+	    si->net.ipv4.FragOKs = ipstat.ips_fragments
+				    - (ipstat.ips_fragdropped + ipstat.ips_fragtimeout);
+	    si->net.ipv4.FragFails = ipstat.ips_cantfrag;
+	    si->net.ipv4.FragCreates = ipstat.ips_ofragments;
+        }
+        
+        struct icmpstat icmpstat;
+	len = sizeof icmpstat;
+	/* ICMPv4 stat */
+        if (!sysctlbyname("net.inet.icmp.stats", &icmpstat, &len, 0, 0)) {
+	    si->net.icmpv4.InMsgs = icmpstat.icps_badcode + icmpstat.icps_tooshort + 
+		icmpstat.icps_checksum + icmpstat.icps_badlen;
+	    for (i=0; i <= ICMP_MAXTYPE; i++) 
+		si->net.icmpv4.InMsgs += icmpstat.icps_inhist[i];
+	    si->net.icmpv4.InErrors = icmpstat.icps_badcode + icmpstat.icps_tooshort +
+		icmpstat.icps_checksum + icmpstat.icps_badlen;
+	
+	    si->net.icmpv4.InDestUnreachs = icmpstat.icps_inhist[ICMP_UNREACH];
+	    si->net.icmpv4.InTimeExcds = icmpstat.icps_inhist[ICMP_TIMXCEED];
+	    si->net.icmpv4.InParmProbs = icmpstat.icps_inhist[ICMP_PARAMPROB];
+	    si->net.icmpv4.InSrcQuenchs = icmpstat.icps_inhist[ICMP_SOURCEQUENCH];
+	    si->net.icmpv4.InRedirects = icmpstat.icps_inhist[ICMP_REDIRECT];
+	    si->net.icmpv4.InEchos = icmpstat.icps_inhist[ICMP_ECHO];
+	    si->net.icmpv4.InEchoReps = icmpstat.icps_inhist[ICMP_ECHOREPLY];
+	    si->net.icmpv4.InTimestamps = icmpstat.icps_inhist[ICMP_TSTAMP];
+	    si->net.icmpv4.InTimestampReps = icmpstat.icps_inhist[ICMP_TSTAMPREPLY];
+	    si->net.icmpv4.InAddrMasks = icmpstat.icps_inhist[ICMP_MASKREQ];
+	    si->net.icmpv4.InAddrMaskReps = icmpstat.icps_inhist[ICMP_MASKREPLY];
+	
+	    si->net.icmpv4.OutMsgs = icmpstat.icps_oldshort + icmpstat.icps_oldicmp;
+	    for (i=0; i <= ICMP_MAXTYPE; i++)
+		si->net.icmpv4.OutMsgs += icmpstat.icps_outhist[i];
+	
+	    si->net.icmpv4.OutErrors = icmpstat.icps_oldshort + icmpstat.icps_oldicmp;
+	    si->net.icmpv4.OutDestUnreachs = icmpstat.icps_outhist[ICMP_UNREACH];
+	    si->net.icmpv4.OutTimeExcds = icmpstat.icps_outhist[ICMP_TIMXCEED];
+	    si->net.icmpv4.OutParmProbs = icmpstat.icps_outhist[ICMP_PARAMPROB];
+	    si->net.icmpv4.OutSrcQuenchs = icmpstat.icps_outhist[ICMP_SOURCEQUENCH];
+	    si->net.icmpv4.OutRedirects = icmpstat.icps_outhist[ICMP_REDIRECT];
+	    si->net.icmpv4.OutEchos = icmpstat.icps_outhist[ICMP_ECHO];
+	    si->net.icmpv4.OutEchoReps = icmpstat.icps_outhist[ICMP_ECHOREPLY];
+	    si->net.icmpv4.OutTimestamps = icmpstat.icps_outhist[ICMP_TSTAMP];
+	    si->net.icmpv4.OutTimestampReps = icmpstat.icps_outhist[ICMP_TSTAMPREPLY];
+	    si->net.icmpv4.OutAddrMasks = icmpstat.icps_outhist[ICMP_MASKREQ];
+	    si->net.icmpv4.OutAddrMaskReps = icmpstat.icps_outhist[ICMP_MASKREPLY];
+        }
+
+        struct udpstat udpstat;
+	len = sizeof udpstat;
+	/* UDPv4 stat */
+        if (!sysctlbyname("net.inet.udp.stats", &udpstat, &len, 0, 0)) {
+	    si->net.udpv4.InDatagrams = udpstat.udps_ipackets;
+	    si->net.udpv4.NoPorts = udpstat.udps_noport;
+	    si->net.udpv4.InErrors = udpstat.udps_hdrops + udpstat.udps_badsum + udpstat.udps_badlen;
+	    si->net.udpv4.OutDatagrams = udpstat.udps_opackets;
+        }
+
+
+        struct tcpstat tcpstat;
+	len = sizeof tcpstat;
+	unsigned int tcp_total, tcp_count;
+	struct xinpgen *xinpgen;
+	struct xtcpcb *tp;
+	struct xinpgen *ptr;
+	/* UDPv4 stat */
+	
+        if (!sysctlbyname("net.inet.tcp.stats", &tcpstat, &len, 0, 0)) {
+	    si->net.tcp.RtoAlgorithm = 4; /* Assume Van Jacobsen's algorithm */
+	    // si->net.tcp.RtoMin; not in use
+	    // si->net.tcp.RtoMax; not in use
+	    si->net.tcp.MaxConn = 0;
+	    si->net.tcp.ActiveOpens = tcpstat.tcps_connattempt;
+	    si->net.tcp.PassiveOpens = tcpstat.tcps_accepts;
+	    si->net.tcp.AttemptFails = tcpstat.tcps_conndrops;
+	    si->net.tcp.EstabResets = tcpstat.tcps_drops;
+	    si->net.tcp.InSegs = tcpstat.tcps_rcvtotal;
+	    si->net.tcp.OutSegs = tcpstat.tcps_sndtotal - tcpstat.tcps_sndrexmitpack;
+	    si->net.tcp.RetransSegs = tcpstat.tcps_sndrexmitpack;
+	    si->net.tcp.InErrs = tcpstat.tcps_rcvbadsum + tcpstat.tcps_rcvbadoff 
+				+ tcpstat.tcps_rcvmemdrop + tcpstat.tcps_rcvshort;
+	    si->net.tcp.OutRsts = tcpstat.tcps_sndctrl - tcpstat.tcps_closed;
+	    si->net.tcp.CurrEstab = 0;
+	    tcp_count = 0;
+	    tcp_total = 0;
+	    len=0;
+	    if(sysctlbyname("net.inet.tcp.pcblist", NULL, &len, NULL, 0)){
+		errx(1, "%s" ,"net.inet.tcp.pcblist failed");
+	    }
+	    // printf("l=%d\n",len);exit(0);
+	    xinpgen = malloc(len);
+	    if (xinpgen == NULL)
+	    {
+	       errx (1, "net.inet.tcp.pcblist: malloc failed.");
+	    }
+	    /* calculate number of IPv4 and IPv6 established connection */
+	    if (sysctlbyname("net.inet.tcp.pcblist", xinpgen, &len, NULL, 0) == 0) {
+		for (ptr = (struct xinpgen *)(void *)((char *)xinpgen + xinpgen->xig_len);
+		    ptr->xig_len > sizeof(struct xinpgen);
+		    ptr = (struct xinpgen *)(void *)((char *)ptr + ptr->xig_len)) {
+			tp = (struct xtcpcb *)ptr;
+			if (tp->xt_inp.inp_gencnt > xinpgen->xig_gen ||
+			    ((tp->xt_inp.inp_vflag & INP_IPV4) || (tp->xt_inp.inp_vflag & INP_IPV6)) == 0)
+		    continue;
+
+		tcp_total++;
+		if (tp->xt_tp.t_state == TCPS_ESTABLISHED ||
+		    tp->xt_tp.t_state == TCPS_CLOSE_WAIT)
+			tcp_count++;
+		}
+		si->net.tcp.CurrEstab = tcp_count;
+	    }
+	    free(xinpgen);
+        }
+
+        struct ip6stat ip6stat;
+	len = sizeof ip6stat;
+	/* IPv6 stat */
+        if (!sysctlbyname("net.inet6.ip6.stats", &ip6stat, &len, 0, 0)) {
+	    si->net.ipv6.Ip6InReceives = ip6stat.ip6s_total;
+	    si->net.ipv6.Ip6InHdrErrors = ip6stat.ip6s_tooshort + ip6stat.ip6s_toosmall + 
+	    ip6stat.ip6s_toomanyhdr + ip6stat.ip6s_exthdrtoolong + ip6stat.ip6s_badvers;
+	    /* si->net.ipv6.Ip6InTooBigErrors =  */
+	    si->net.ipv6.Ip6InNoRoutes = ip6stat.ip6s_noroute;
+	    si->net.ipv6.Ip6InAddrErrors = ip6stat.ip6s_cantforward;
+	    /* si->net.ipv6.Ip6InUnknownProtos =  */
+	    si->net.ipv6.Ip6InTruncatedPkts = ip6stat.ip6s_toosmall;
+	    si->net.ipv6.Ip6InDiscards = ip6stat.ip6s_cantforward; /* ??? */
+	    si->net.ipv6.Ip6InDelivers = ip6stat.ip6s_delivered;
+	    si->net.ipv6.Ip6OutForwDatagrams = ip6stat.ip6s_forward;
+	    si->net.ipv6.Ip6OutRequests = ip6stat.ip6s_localout;
+	    si->net.ipv6.Ip6OutDiscards = ip6stat.ip6s_odropped;
+	    si->net.ipv6.Ip6OutNoRoutes = ip6stat.ip6s_noroute;
+	    si->net.ipv6.Ip6ReasmTimeout = ip6stat.ip6s_fragtimeout;
+	    /* si->net.ipv6.Ip6ReasmReqds = ip6stat.ip6s_cantfrag; */
+	    si->net.ipv6.Ip6ReasmOKs = ip6stat.ip6s_reassembled;
+	    si->net.ipv6.Ip6ReasmFails = ip6stat.ip6s_fragdropped + ip6stat.ip6s_fragtimeout;
+	    si->net.ipv6.Ip6FragOKs = ip6stat.ip6s_fragments - (ip6stat.ip6s_fragdropped + ip6stat.ip6s_fragtimeout);
+	    si->net.ipv6.Ip6FragFails = ip6stat.ip6s_cantfrag;
+	    si->net.ipv6.Ip6FragCreates = ip6stat.ip6s_ofragments;
+	    /* si->net.ipv6.Ip6InMcastPkts =  */
+	    /* si->net.ipv6.Ip6OutMcastPkts =  */
+	}
+
+	/* ICMPv6 stat */
+        struct icmp6stat icmp6stat;
+	len = sizeof icmp6stat;
+	/* IPv6 stat */
+	if (!sysctlbyname("net.inet6.icmp6.stats", &icmp6stat, &len, 0, 0)) {
+	    si->net.icmpv6.Icmp6InMsgs = icmp6stat.icp6s_badcode + icmp6stat.icp6s_tooshort +
+				    icmp6stat.icp6s_checksum + icmp6stat.icp6s_badlen;
+	for (i=0; i <= ICMP6_MAXTYPE; i++)
+	    si->net.icmpv6.Icmp6InMsgs += icmp6stat.icp6s_inhist[i];
+
+	    si->net.icmpv6.Icmp6InErrors = icmp6stat.icp6s_badcode + icmp6stat.icp6s_tooshort +
+					    icmp6stat.icp6s_checksum + icmp6stat.icp6s_badlen;
+	    si->net.icmpv6.Icmp6InDestUnreachs = icmp6stat.icp6s_inhist[ICMP6_DST_UNREACH];
+	    si->net.icmpv6.Icmp6InPktTooBigs = icmp6stat.icp6s_inhist[ICMP6_PACKET_TOO_BIG];
+	    si->net.icmpv6.Icmp6InTimeExcds = icmp6stat.icp6s_inhist[ICMP6_TIME_EXCEEDED];
+	    si->net.icmpv6.Icmp6InParmProblems = icmp6stat.icp6s_inhist[ICMP6_PARAM_PROB];
+	    si->net.icmpv6.Icmp6InEchos = icmp6stat.icp6s_inhist[ICMP6_ECHO_REQUEST];
+	    si->net.icmpv6.Icmp6InEchoReplies = icmp6stat.icp6s_inhist[ICMP6_ECHO_REPLY];
+	    si->net.icmpv6.Icmp6InGroupMembQueries = icmp6stat.icp6s_inhist[ICMP6_MEMBERSHIP_QUERY];
+	    si->net.icmpv6.Icmp6InGroupMembResponses = icmp6stat.icp6s_inhist[ICMP6_MEMBERSHIP_REPORT];
+	    si->net.icmpv6.Icmp6InGroupMembReductions = icmp6stat.icp6s_inhist[ICMP6_MEMBERSHIP_REDUCTION];
+	    si->net.icmpv6.Icmp6InRouterSolicits = icmp6stat.icp6s_inhist[ND_ROUTER_SOLICIT];
+	    si->net.icmpv6.Icmp6InRouterAdvertisements = icmp6stat.icp6s_inhist[ND_ROUTER_ADVERT];
+	    si->net.icmpv6.Icmp6InNeighborSolicits = icmp6stat.icp6s_inhist[ND_NEIGHBOR_SOLICIT];
+	    si->net.icmpv6.Icmp6InNeighborAdvertisements = icmp6stat.icp6s_inhist[ND_NEIGHBOR_ADVERT];
+	    si->net.icmpv6.Icmp6InRedirects = icmp6stat.icp6s_inhist[ND_REDIRECT];
+	    si->net.icmpv6.Icmp6OutMsgs = icmp6stat.icp6s_badcode + icmp6stat.icp6s_tooshort +
+					icmp6stat.icp6s_checksum + icmp6stat.icp6s_badlen;
+	    for (i=0; i <= ICMP6_MAXTYPE; i++)
+		si->net.icmpv6.Icmp6OutMsgs += icmp6stat.icp6s_outhist[i];
+	    si->net.icmpv6.Icmp6OutDestUnreachs = icmp6stat.icp6s_outhist[ICMP6_DST_UNREACH];
+	    si->net.icmpv6.Icmp6OutPktTooBigs = icmp6stat.icp6s_outhist[ICMP6_PACKET_TOO_BIG];
+	    si->net.icmpv6.Icmp6OutTimeExcds = icmp6stat.icp6s_outhist[ICMP6_TIME_EXCEEDED];
+	    si->net.icmpv6.Icmp6OutParmProblems = icmp6stat.icp6s_outhist[ICMP6_PARAM_PROB];
+	    si->net.icmpv6.Icmp6OutEchoReplies = icmp6stat.icp6s_outhist[ICMP6_ECHO_REPLY];
+	    si->net.icmpv6.Icmp6OutRouterSolicits = icmp6stat.icp6s_outhist[ND_ROUTER_SOLICIT];
+	    si->net.icmpv6.Icmp6OutNeighborSolicits = icmp6stat.icp6s_outhist[ND_NEIGHBOR_SOLICIT];
+	    si->net.icmpv6.Icmp6OutNeighborAdvertisements = icmp6stat.icp6s_outhist[ND_NEIGHBOR_ADVERT];
+	    si->net.icmpv6.Icmp6OutRedirects = icmp6stat.icp6s_outhist[ND_REDIRECT];
+	    si->net.icmpv6.Icmp6OutGroupMembResponses = icmp6stat.icp6s_outhist[ICMP6_MEMBERSHIP_REPORT];
+	    si->net.icmpv6.Icmp6OutGroupMembReductions = icmp6stat.icp6s_outhist[ICMP6_MEMBERSHIP_REDUCTION];
+	}
+	
+	/*
+	** fetch application-specific counters
+	*/
+#if	HTTPSTATS
+	if ( wwwvalid)
+		wwwvalid = getwwwstat(80, &(si->www));
+#endif
+}
+
+#endif
+
+#ifdef linux
 /*
 ** set of subroutines to determine which disks should be monitored
 ** and to translate name strings into (shorter) name strings
@@ -1230,6 +1880,7 @@ isdisk(unsigned int major, unsigned int minor,
 	return NONTYPE;
 }
 
+#ifdef linux
 /*
 ** LINUX SPECIFIC:
 ** Determine boot-time of this system (as number of jiffies since 1-1-1970).
@@ -1291,6 +1942,28 @@ getbootlinux(long hertz)
 
 	return bootjiffies;
 }
+#elif defined(FREEBSD)
+unsigned long long
+getbootbsd(long hertz)
+{
+    int mib [2];
+    size_t size;
+    // time_t now;
+    struct timeval boottime;
+    time_t		uptime = 0;
+
+    // (void)time(&now);
+
+    mib [0] = CTL_KERN;
+    mib [1] = KERN_BOOTTIME;
+
+    size = sizeof(boottime);
+
+    if (sysctl(mib, 2, &boottime, &size, NULL, 0) != -1)
+        (long long)uptime = boottime.tv_sec;
+    return uptime;
+}
+#endif
 
 #if	HTTPSTATS
 /*
