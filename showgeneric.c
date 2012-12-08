@@ -268,7 +268,9 @@ static const char rcsid[] = "$Id: showgeneric.c,v 1.71 2010/10/25 19:08:32 gerlo
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
-#include <termio.h>
+#ifdef linux
+ #include <termio.h>
+#endif
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -1081,9 +1083,15 @@ generic_samp(time_t curtime, int nsecs,
 			   case MPROCNET:
 				if ( !(supportflags & NETATOP) )
 				{
+#ifdef linux
 					statmsg = "Kernel module 'netatop' not "
 					          "active or no root privs; "
 					          "request ignored!";
+#elif defined(FREEBSD)
+					statmsg = "FreeBSD have no support for per-process network stat ; "
+					          "request ignored!";
+#endif
+
 					break;
 				}
 
@@ -1295,6 +1303,7 @@ generic_samp(time_t curtime, int nsecs,
 					}
 					else
 					{
+						setpwent();
 						while ( (pwd = getpwent()))
 						{
 							if (regexec(&userregex,
@@ -2498,6 +2507,7 @@ do_username(char *name, char *val)
 			exit(1);
 		}
 
+		setpwent();
 		while ( (pwd = getpwent()))
 		{
 			if (regexec(&userregex, pwd->pw_name, 0, NULL, 0))
