@@ -23,7 +23,7 @@
 */
 #include "netstats.h"
 
-#define	MAXCPU		2048
+#define	MAXCPUS		2048
 #define	MAXDSK		512
 #define	MAXLVM		1024
 #define	MAXMDD		256
@@ -109,7 +109,7 @@ struct	cpustat {
 	count_t	cfuture[4];	/* reserved for future use	*/
 
 	struct percpu   all;
-	struct percpu   cpu[MAXCPU];
+	struct percpu   cpu[MAXCPUS];
 };
 
 /************************************************************************/
@@ -121,6 +121,7 @@ struct	perdsk {
         count_t	nwrite;	/* number of write transfers            */
         count_t	nwsect;	/* number of sectors written            */
         count_t	io_ms;	/* number of millisecs spent for I/O    */
+        float	busy_pct;	/* absolute %of busy time  */
         count_t	avque;	/* average queue length                 */
 	count_t	cfuture[4];	/* reserved for future use	*/
 };
