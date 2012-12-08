@@ -1295,8 +1295,13 @@ taskline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 static void
 memhead(int osvers, int osrel, int ossub)
 {
+#ifdef linux
 	printf("memtotal memfree buffers cached dirty slabmem"
 	       "  swptotal swpfree _mem_"             );
+#elif defined(FREEBSD)
+	printf("memtotal memfree wired   cached inact active "
+	       "  swptotal swpfree _mem_"             );
+#endif
 }
 
 static int
@@ -1465,8 +1470,13 @@ gendskline(struct sstat *ss, char *tstamp, char selector)
 		if (nlines++)
 			printf("%s  ", tstamp);
 
+
 		if (dskbadness)
+#ifdef linux		
 			badness = (dp->io_ms * 100.0 / mstot) * 100/dskbadness;
+#elif defined(FREEBSD)
+			badness = dp->busy_pct * 100/dskbadness;
+#endif
                 else
 			badness = 0;
 
@@ -1476,7 +1486,7 @@ gendskline(struct sstat *ss, char *tstamp, char selector)
 			pn = dp->name + len - 14;
 		else
 			pn = dp->name;
-
+#ifdef linux
         sprintf(buf, "%12.12s", pn);
 		printf("%-14s %3.0lf%% %6.1lf %7.1lf %7.1lf %7.1lf "
 		       "%5.1lf %6.2lf ms",
@@ -1490,7 +1500,22 @@ gendskline(struct sstat *ss, char *tstamp, char selector)
   			        (double)dp->nwsect / dp->nwrite / 2.0 : 0.0,
 			dp->io_ms  ? (double)dp->avque / dp->io_ms    : 0.0,
 		      	iotot ? (double)dp->io_ms  / iotot            : 0.0);
-
+#elif defined(FREEBSD)
+/* 04:05:44  disk           busy read/s KB/read  writ/s KB/writ avque avserv _dsk_ */
+        sprintf(buf, "%12.12s", pn);
+		printf("%-14s %3.0lf%% %6.1lf %7.1lf %7.1lf %7.1lf "
+		       "%5.1lf %6.2lf ms",
+		    	pn,
+			(double)dp->busy_pct,
+			mstot ? (double)dp->nread  * 1000.0 / mstot   : 0.0,
+			dp->nread  ?
+			        (double)dp->nrsect / dp->nread / 2.0  : 0.0,
+			mstot ? (double)dp->nwrite * 1000.0 / mstot   : 0.0,
+			dp->nwrite ?
+  			        (double)dp->nwsect / dp->nwrite / 2.0 : 0.0,
+			(double)dp->avque,
+		      	(double)dp->io_ms/1000);
+#endif
 		postprint(badness);
 	}
 
