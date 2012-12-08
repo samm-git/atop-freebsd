@@ -910,11 +910,17 @@ deviatsyst(struct sstat *cur, struct sstat *pre, struct sstat *dev)
 		                                  pre->dsk.dsk[j].nrsect);
 		dev->dsk.dsk[i].nwsect = subcount(cur->dsk.dsk[i].nwsect,
 		                                  pre->dsk.dsk[j].nwsect);
+#ifdef linux
 		dev->dsk.dsk[i].io_ms  = subcount(cur->dsk.dsk[i].io_ms,
 		                                  pre->dsk.dsk[j].io_ms);
 		dev->dsk.dsk[i].avque  = subcount(cur->dsk.dsk[i].avque,
 		                                  pre->dsk.dsk[j].avque);
-
+#elif defined(FREEBSD)
+		/* FreeBSD provides absolute values */
+		dev->dsk.dsk[i].io_ms  = cur->dsk.dsk[i].io_ms;
+		dev->dsk.dsk[i].avque  = cur->dsk.dsk[i].avque;
+		dev->dsk.dsk[i].busy_pct = cur->dsk.dsk[i].busy_pct;
+#endif
 		/*
 		** determine new j
 		*/
