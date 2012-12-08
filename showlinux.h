@@ -238,6 +238,7 @@ extern proc_printdef *allprocpdefs[];
 extern proc_printdef procprt_PID;
 extern proc_printdef procprt_TID;
 extern proc_printdef procprt_PPID;
+extern proc_printdef procprt_JID;
 extern proc_printdef procprt_SYSCPU;
 extern proc_printdef procprt_USRCPU;
 extern proc_printdef procprt_VGROW;
