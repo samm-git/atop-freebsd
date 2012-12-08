@@ -94,7 +94,11 @@ static const char rcsid[] = "$Id: showprocs.c,v 1.15 2011/09/05 11:44:16 gerlof 
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <termio.h>
+#ifdef linux
+ #include <termio.h>
+#elif defined(FREEBSD)
+ #include <sys/priority.h>
+#endif
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -518,6 +522,27 @@ procprt_PPID_e(struct tstat *curstat, int avgval, int nsecs)
 
 proc_printdef procprt_PPID = 
    { " PPID", "PPID", procprt_PPID_a, procprt_PPID_e, 5 };
+
+
+/***************************************************************/
+char *
+procprt_JID_a(struct pstat *curstat, int avgval, int nsecs)
+{
+     static char buf[10];
+
+     sprintf(buf, "%5d", curstat->gen.jid);
+     return buf;
+}
+
+
+char *
+procprt_JID_e(struct pstat *curstat, int avgval, int nsecs)
+{
+     return "     ";
+}
+
+proc_printdef procprt_JID = 
+    { "  JID", "JID", procprt_JID_a, procprt_JID_e, 5 };
 
 /***************************************************************/
 char *
@@ -1121,6 +1146,7 @@ proc_printdef procprt_TSLPU =
 char *
 procprt_POLI_a(struct tstat *curstat, int avgval, int nsecs)
 {
+#ifdef linux
         switch (curstat->cpu.policy)
         {
                 case SCHED_NORMAL:
@@ -1142,7 +1168,23 @@ procprt_POLI_a(struct tstat *curstat, int avgval, int nsecs)
                         return "idle";
                         break;
         }
-        return "?   ";
+#elif defined(FREEBSD)
+	switch PRI_BASE(curstat->cpu.policy){
+	    case PRI_ITHD:
+		return "intr";
+		break;
+	    case PRI_REALTIME:
+		return "rltm";
+		break;
+	    case PRI_TIMESHARE:
+		return "tmsh";
+		break;
+	    case PRI_IDLE:
+		return "idle";
+		break;
+	}
+#endif
+	return "?   ";
 }
 
 char *
