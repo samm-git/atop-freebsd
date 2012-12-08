@@ -274,7 +274,9 @@ static const char rcsid[] = "$Id: showlinux.c,v 1.70 2010/10/23 14:04:12 gerlof 
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <termio.h>
+#ifdef linux
+ #include <termio.h>
+#endif
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -453,6 +455,7 @@ proc_printdef *allprocpdefs[]=
 	&procprt_PID,
 	&procprt_TID,
 	&procprt_PPID,
+	&procprt_JID,
 	&procprt_SYSCPU,
 	&procprt_USRCPU,
 	&procprt_VGROW,
@@ -1014,13 +1017,21 @@ priphead(int curlist, int totlist, char *showtype, char *showorder,
                         "SORTITEM:10 CMD:10", 
                         "built-in netprocs");
 
+#ifdev linux
                 make_proc_prints(varprocs, MAXITEMS,
                         "PID:10 TID:4 PPID:9 RUID:8 RGID:8 EUID:5 EGID:4 "
      			"SUID:3 SGID:2 FSUID:3 FSGID:2 "
                         "STDATE:7 STTIME:7 ENDATE:5 ENTIME:5 "
 			"ST:6 EXC:6 S:6 SORTITEM:10 CMD:10", 
                         "built-in varprocs");
-
+#elif defined(FREEBSD)
+                 make_proc_prints(varprocs, MAXITEMS,
+                         "PID:10 TID:4 RUID:8 RGID:8 EUID:5 EGID:4 "
+      			"SUID:3 SGID:2 JID:3 "
+                         "STDATE:7 STTIME:7 ENDATE:5 ENTIME:5 "
+ 			"ST:6 EXC:6 S:6 SORTITEM:10 CMD:10", 
+                         "built-in varprocs");
+#endif
                 make_proc_prints(cmdprocs, MAXITEMS,
                         "PID:10 TID:4 S:8 SORTITEM:10 COMMAND-LINE:10", 
                         "built-in cmdprocs");
@@ -1688,10 +1699,12 @@ pridisklike(extraparam *ep, struct perdsk *dp, char *lp, char *highorderp,
 
                 ep->iotot =  ep->perdsk[ep->index].nread +
 		             ep->perdsk[ep->index].nwrite;
-
+#ifdef linux
                 busy        = (double)(ep->perdsk[ep->index].io_ms *
 						100.0 / ep->mstot);
-
+#elif defined(FREEBSD)
+                busy        = (double)ep->perdsk[ep->index].busy_pct;
+#endif
                 if (dskbadness)
                         badness = busy * 100 / dskbadness;
                 else
