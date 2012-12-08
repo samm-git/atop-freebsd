@@ -298,6 +298,14 @@ static const char rcsid[] = "$Id: atop.c,v 1.49 2010/10/23 14:01:00 gerlof Exp $
 #include "showgeneric.h"
 #include "parseable.h"
 
+#ifdef FREEBSD // FreeBSD using kvm to manage processes
+ #include <kvm.h>
+ #include <devstat.h>
+ #include <paths.h>
+ #include <err.h>
+ kvm_t *kd = NULL;
+#endif
+
 #define	allflags  "ab:cde:fghijklmnopqrstuvwxyz1ABCDEFGHIJKL:MNOP:QRSTUVWXYZ"
 #define	PROCCHUNK	100	/* process-entries for future expansion  */
 #define	MAXFL		64      /* maximum number of command-line flags  */
@@ -319,6 +327,7 @@ char		rawreadflag;
 unsigned int	begintime, endtime;
 char		flaglist[MAXFL];
 char		deviatonly = 1;
+char		filterkernel = 1;
 char      	usecolors  = 1;  /* boolean: colors for high occupation  */
 char		threadview = 0;	 /* boolean: show individual threads     */
 
@@ -519,6 +528,10 @@ main(int argc, char *argv[])
 				deviatonly=0;
 				break;
 
+                           case 'U':		/* Show kernel "processes" */
+				filterkernel=0;
+				break;
+
                            case 'b':		/* begin time ?               */
 				if ( !hhmm2secs(optarg, &begintime) )
 					prusage(argv[0]);
@@ -640,6 +653,31 @@ main(int argc, char *argv[])
 	** (remaining) resource-usage by processes which have finished
 	*/
 	acctreason = acctswon();
+
+#ifdef FREEBSD
+	/* 
+	** The functions kvm_open()  return a descriptor used to
+	** access kernel virtual memory via the kvm(3) library routines
+	** error reporting disabled because it may break ncurses
+	*/
+	kd = kvm_open(NULL, _PATH_DEVNULL, NULL, O_RDONLY, NULL);
+	/*
+	 * Make sure that the userland devstat version matches the kernel
+	 * devstat version.  If not, exit and print a message informing
+	 * the user of his mistake.
+	 */
+	if (devstat_checkversion(NULL) < 0)
+		errx(1, "%s", devstat_errbuf);
+	/* Limit maximum of memory allowed to allocate. Some users
+	 * reported problem with atop eating all memory. While 
+	 i am unable to repeat it or find possible reason it is better to 
+	 make the limit instead of eating all available RAM */
+	/* set 100mb vmem limit */
+	#define ATOP_MAXVMEM 100 * 1024 * 1024; 
+	struct rlimit lim;
+	lim.rlim_cur = lim.rlim_max = ATOP_MAXVMEM;
+	setrlimit(RLIMIT_VMEM, &lim);
+#endif
 
 	/*
 	** determine properties (like speed) of all interfaces
@@ -970,6 +1008,9 @@ prusage(char *myname)
 	printf("\t  -P  generate parseable output for specified label(s)\n");
 	printf("\t  -L  alternate line length (default 80) in case of "
 			"non-screen output\n");
+#ifdef FREEBSD
+	printf("\t  -U  Show FreeBSD kernel processes (filtered by default)\n");
+#endif
 
 	(*vis.show_usage)();
 
