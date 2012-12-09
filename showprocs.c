@@ -468,11 +468,17 @@ char *
 procprt_TID_ae(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
-
+#ifdef linux
 	if (curstat->gen.isproc)
         	sprintf(buf, "    -");
 	else
         	sprintf(buf, "%5d", curstat->gen.pid);
+#elif defined(FREEBSD)
+	if (curstat->gen.isproc)
+        	sprintf(buf, "     -");
+	else
+        	sprintf(buf, "%6d", curstat->gen.pid);
+#endif
         return buf;
 }
 
