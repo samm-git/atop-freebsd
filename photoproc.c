@@ -658,7 +658,7 @@ procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc, struc
 		curtask->gen.name[PNAMLEN] = 0;
 	}
 	else {
-		snprintf(curtask->gen.name,PNAMLEN-1, "[%s]", pp->ki_tdname);
+		snprintf(curtask->gen.name,PNAMLEN-1, "[%s]", pp->ki_ocomm);
 	}
 	/* 
 	 * FIXME need to review http://www.unix.com/man-page/all/2/rtprio/ one more time 
