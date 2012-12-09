@@ -51,7 +51,6 @@ static int		netexitfd = -1;
 static struct naheader	*nahp;
 static int		semid     = -1;
 static unsigned long	lastseq;
-
 /*
 ** storage of last exited tasks read from exitfile
 ** every exitstore struct is registered in hash buckets,
@@ -91,6 +90,7 @@ netatop_ipopen(void)
 void
 netatop_probe(void)
 {
+#ifdef linux
 	struct sembuf   	semdecr = {1, -1, SEM_UNDO};
 	socklen_t		sl = 0;
 	struct stat		exstat;
@@ -101,10 +101,6 @@ netatop_probe(void)
 	if (netsock == -1)
 		return;
 
-#ifdef FREEBSD // hack
-	return;
-#endif
-#ifdef linux // SOL_IP is linux specific
 	/*
 	** probe if the netatop module is active
 	*/
@@ -114,7 +110,6 @@ netatop_probe(void)
 		supportflags &= ~NETATOPD;
 		return;
 	}
-#endif
 	// set appropriate support flag
 	supportflags |= NETATOP;
 
@@ -195,6 +190,10 @@ netatop_probe(void)
 
 	// set appropriate support flag
 	supportflags |= NETATOPD;
+#elif defined(FREEBSD)
+	lastseq = 0; // avoid warnings
+	return;
+#endif
 }
 
 void
@@ -228,6 +227,7 @@ netatop_signoff(void)
 void
 netatop_gettask(pid_t id, char type, struct tstat *tp)
 {
+#ifdef linux
 	struct netpertask	npt;
 	socklen_t		socklen = sizeof npt;
 	int 			cmd = (type == 'g' ?
@@ -240,7 +240,7 @@ netatop_gettask(pid_t id, char type, struct tstat *tp)
 		memset(&tp->net, 0, sizeof tp->net);
 		return;
 	}
-#ifdef linux
+
 	/*
  	** get statistics of this process/thread
 	*/
@@ -290,6 +290,7 @@ netatop_gettask(pid_t id, char type, struct tstat *tp)
 unsigned int
 netatop_exitstore(void)
 {
+#ifdef linux
 	socklen_t		socklen = 0, nexitnet, sz, nr=0;
 	unsigned long		uncomplen;
 	unsigned char		nextsize;
@@ -297,7 +298,6 @@ netatop_exitstore(void)
 	unsigned char		databuf[nahp->ntplen];
 	struct netpertask	*tmp = (struct netpertask *)databuf;
 	struct exitstore	*esp;
-#ifdef linux
         regainrootprivs();
 
 	/*
@@ -418,8 +418,10 @@ netatop_exitstore(void)
 	}
 
 	exitnum = nr;
-#endif
 	return nr;
+#elif defined(FREEBSD)
+	return 0;
+#endif
 }
 
 /*

@@ -483,7 +483,11 @@ procprt_TID_ae(struct tstat *curstat, int avgval, int nsecs)
 }
 
 proc_printdef procprt_TID = 
+#ifdef linux
    { "  TID", "TID", procprt_TID_ae, procprt_TID_ae, 5 };
+#elif defined(FREEBSD)
+   { "   TID", "TID", procprt_TID_ae, procprt_TID_ae, 6 };
+#endif
 /***************************************************************/
 char *
 procprt_PID_a(struct tstat *curstat, int avgval, int nsecs)
