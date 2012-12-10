@@ -396,7 +396,8 @@ proccmd(struct tstat *curtask, struct kinfo_proc *pp){
 
 static void
 procthr(struct tstat *curtask, struct kinfo_proc *pp){
-	snprintf(curtask->gen.cmdline, CMDLEN-1, "[%s]", pp->ki_ocomm);
+	snprintf(curtask->gen.cmdline, CMDLEN-1, "[%s]",
+		strlen(pp->ki_ocomm) ? pp->ki_ocomm : pp->ki_comm);
 }
 
 int
@@ -657,7 +658,7 @@ procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc, struc
 		curtask->gen.name[PNAMLEN] = 0;
 	}
 	else {
-		snprintf(curtask->gen.name,PNAMLEN-1, "[%s]", pp->ki_ocomm);
+		snprintf(curtask->gen.name,PNAMLEN-1, "[%s]", strlen(pp->ki_ocomm) ? pp->ki_ocomm : pp->ki_comm);
 	}
 	/* 
 	 * FIXME need to review http://www.unix.com/man-page/all/2/rtprio/ one more time 
