@@ -392,8 +392,11 @@ proccmd(struct tstat *curtask, struct kinfo_proc *pp){
 	}
 	memset(curtask->gen.cmdline, 0, CMDLEN+1);
 	strncpy(curtask->gen.cmdline, string, CMDLEN);
-	// printf("proccmd: curtask->gen.cmdline: %s,pid=%d:%d\n",curtask->gen.cmdline,pp->ki_pid, curtask->gen.isproc);
+}
 
+static void
+procthr(struct tstat *curtask, struct kinfo_proc *pp){
+	snprintf(curtask->gen.cmdline, CMDLEN-1, "[%s]", pp->ki_ocomm);
 }
 
 int
@@ -468,8 +471,8 @@ photoproc(struct tstat *tasklist, int maxtask)
 				curtask->gen.nthrrun  = 0;
 				curtask->gen.nthrslpi = 0;
 				curtask->gen.nthrslpu = 0;
+				procthr(curthr, pbase);
 				procstat(curthr, bootepoch, 0, pbase);
-				
 			}
 			else {
 				curtask = tasklist+tval;
@@ -495,12 +498,8 @@ photoproc(struct tstat *tasklist, int maxtask)
 			default: 
 				curtask->gen.nthrrun++;
 			}
-			
-			
-			// printf("test123\n");
 			prev_pid=pbase->ki_pid;
 			prev_curtask=curtask;
-			
 			tval++;
 		}
 		if(tval == maxtask)  /* do not write more procs then allocated memory */
