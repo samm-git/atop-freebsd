@@ -800,6 +800,7 @@ generic_samp(time_t curtime, int nsecs,
 
 						for (t = curlist[i] - tstat+1;
 					     	     t < ndeviat &&
+					     	     (curlist[i])->gen.tgid &&
 					             (tstat+t)->gen.tgid ==
 					               (curlist[i])->gen.tgid;
 						     t++)
