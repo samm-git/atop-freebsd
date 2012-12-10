@@ -559,7 +559,7 @@ ptrverify(const void *ptr, const char *errormsg, ...)
 		if (vis.show_end)
 			(vis.show_end)();
 
-        	va_list args;
+        	va_list args = {0};
 		fprintf(stderr, errormsg, args);
         	va_end  (args);
 
