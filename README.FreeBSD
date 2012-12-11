@@ -8,11 +8,11 @@
    /usr/ports/sysutils atop && make install clean" command.
 
    If you want to run latest development version (or submit your patches) use
-   SVN version:
+   GIT version:
 
-     svn checkout http://svn.berlios.de/svnroot/repos/atop-freebsd/trunk atop-freebsd
+     git clone -b atop-2.0.2-bsd git@github.com:samm-git/atop-freebsd.git
      cd atop-freebsd
-     make -f Makefile.fbsd
+     make
 
    and run ./atop from the compilation directory.
 
