@@ -391,7 +391,14 @@ proccmd(struct tstat *curtask, struct kinfo_proc *pp){
 		argv++;
 	}
 	memset(curtask->gen.cmdline, 0, CMDLEN+1);
-	strncpy(curtask->gen.cmdline, string, CMDLEN);
+
+	// enable display of long kernel processes
+	if (!strlen(string) && 
+	    ((pp->ki_flag & P_SYSTEM ) || (pp->ki_flag & P_KTHREAD)))
+		/* kernel process, show with {name} */
+		snprintf(curtask->gen.cmdline, CMDLEN-1, "{%s}", pp->ki_comm);
+	else
+	    strncpy(curtask->gen.cmdline, string, CMDLEN);
 }
 
 static void
@@ -468,7 +475,6 @@ photoproc(struct tstat *tasklist, int maxtask)
 				*/
 				curthr = tasklist+tval ;
 				temp_proc=prev_curtask;
-				curthr->gen.isproc = 0;
 				curtask->gen.nthrrun  = 0;
 				curtask->gen.nthrslpi = 0;
 				curtask->gen.nthrslpu = 0;
@@ -478,7 +484,6 @@ photoproc(struct tstat *tasklist, int maxtask)
 			else {
 				curtask = tasklist+tval;
 				temp_proc=curtask;
-				curtask->gen.isproc = 1;
 				proccmd(curtask, pbase);
 				procstat(curtask, bootepoch, 1, pbase);
 			}
