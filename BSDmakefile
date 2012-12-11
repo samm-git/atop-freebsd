@@ -15,7 +15,7 @@ CRNPATH  = /etc/cron.d
 ROTPATH  = /etc/logrotate.d
 PMPATH1  = /usr/lib/pm-utils/sleep.d
 PMPATH2  = /usr/lib64/pm-utils/sleep.d
-VERSION  = atop-1.26.fbsd.beta8
+VERSION  = atop-2.0.2.fbsd.beta1
 
 CFLAGS  += -Wall -DFREEBSD	 # -DHTTPSTATS 
 LDFLAGS += -lncurses -lm -lz -lkvm -ldevstat
@@ -87,10 +87,11 @@ dist: clean
 		    ifprop.c ifprop.h netstats.h parseable.c parseable.h \
 		    photoproc.c photoproc.h photosyst.c photosyst.h procdbase.c \
 		    rawlog.c showgeneric.c showgeneric.h showlinux.c showlinux.h \
-		    showprocs.c showsys.c various.c version.c \
-		    AUTHOR COPYING ChangeLog Makefile Makefile.fbsd README \
-		    ChangeLog.FreeBSD README.FreeBSD \
+		    showprocs.c showsys.c various.c version.c version.h \
+		    AUTHOR COPYING ChangeLog Makefile BSDmakefile README \
+		    ChangeLog.FreeBSD README.FreeBSD netatop.h netatopd.h \
 		    atop.cron atop.daily atop.init psaccs_atop psaccu_atop \
+		    netatopif.c 45atoppm atop.service \
 		    dist/$(VERSION)
 		cp -r man dist/$(VERSION)
 		cd dist && tar -cvjf $(VERSION).tar.bz2 $(VERSION)
