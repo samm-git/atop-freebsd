@@ -37,7 +37,7 @@ atopsar:	atop
 		ln -sf atop atopsar
 
 clean:
-		rm -f *.o atop *.core
+		rm -f *.o atop atopsar *.core
 
 install:	atop
 		if [ ! -d $(DESTDIR)$(LOGPATH) ]; 	\

@@ -1,3 +1,8 @@
+! Makefile.fbsd renamed to BSDmakefile
++ Added support for per-thread display/accounting
++ Sources updated to 2.0.2 with some local fixes, photoproc.c was mostly 
+  rewritten
+
 --- atop-freebsd beta8 (2012-02-21)
 # Added setrlimit to 100Mb (experemental)
 

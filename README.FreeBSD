@@ -74,12 +74,13 @@
             atop_keepdays varable, e.g.
             atop_keepdays=60
 
-  Bugs, problems
+  Bugs, problems, limitations
 
-     * Disk per process counters are exported in "blocks". Need to
-       investigate if they are convertible to bytes or not.
+     * Disk per process counters are exported in "blocks" only.
      * It is not possible to read BSD logs on Linux platform. Probably not
        possible to fix without linux version source changes.
+     * Per-process network activity is not implemented, because it will require 
+       kernel modification.
 
    If you found any other issues do not hesitate to contact me using email
    (samm at os2.kiev.ua) or via bug tracker.
