@@ -455,7 +455,7 @@ photoproc(struct tstat *tasklist, int maxtask)
 	int nproc, prev_pid, i;
 	pbase = kvm_getprocs(kd, KERN_PROC_ALL, 0, &nproc);
 	prev_pid = 0;
-	struct tstat *curthr;
+	struct tstat *curthr = NULL;
 	
 	
 	for (i = nproc; --i >= 0; ++pbase) {
@@ -468,40 +468,47 @@ photoproc(struct tstat *tasklist, int maxtask)
 			** gather process-level information
 			*/
 			
-			
+			int is_proc = 0;
 			if(prev_pid==pbase->ki_pid && prev_curtask) {	
 				/*
 				** process thread. Use previous process to fill thread data 
 				*/
+				is_proc = 0;
 				curthr = tasklist+tval ;
 				temp_proc=prev_curtask;
-				curtask->gen.nthrrun  = 0;
-				curtask->gen.nthrslpi = 0;
-				curtask->gen.nthrslpu = 0;
+				procstat(curthr, bootepoch, is_proc, pbase);
 				procthr(curthr, pbase);
-				procstat(curthr, bootepoch, 0, pbase);
 			}
 			else {
+				is_proc = 1;
 				curtask = tasklist+tval;
 				temp_proc=curtask;
+				procstat(curtask, bootepoch, is_proc, pbase);
 				proccmd(curtask, pbase);
-				procstat(curtask, bootepoch, 1, pbase);
 			}
 			/* count threads */
 			switch (pbase->ki_stat) {
 	    		case SRUN:
+	    			if(!is_proc)
+	    			    curthr->gen.nthrrun = 1;
 	    			curtask->gen.nthrrun++;
 	    			break;
 			case SSLEEP:
 			case SIDL:
 			case SSTOP:
 			case SLOCK:
+	    			if(!is_proc)
+	    			    curthr->gen.nthrslpi = 1;
 				curtask->gen.nthrslpi++;
 				break;
 			case SWAIT:
+	    			if(!is_proc)
+	    			    curthr->gen.nthrslpu = 1;
 				curtask->gen.nthrslpu++;
 				break;
-			default: 
+			default:
+	    			if(!is_proc)
+	    			    curthr->gen.nthrrun = 1;
 				curtask->gen.nthrrun++;
 			}
 			prev_pid=pbase->ki_pid;

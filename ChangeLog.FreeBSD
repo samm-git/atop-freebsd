@@ -1,3 +1,5 @@
+# Fixed per-thread running state (was always 0)
+
 --- atop-freebsd-2.02 beta1 (2012-12-11)
 ! Makefile.fbsd renamed to BSDmakefile
 + Added support for per-thread display/accounting
