@@ -80,7 +80,9 @@ static void	fill_networkcnt(struct tstat *, struct tstat *,
 void
 netatop_ipopen(void)
 {
+#ifdef linux
 	netsock = socket(PF_INET, SOCK_RAW, IPPROTO_RAW);
+#endif
 }
 
 /*
