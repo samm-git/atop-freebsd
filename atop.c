@@ -946,6 +946,7 @@ engine(void)
 			if ( (devtstat+i)->gen.isproc)
 				devpstat[j++] = devtstat+i;
 		}
+		nactproc = j;
 
 		/*
 		** activate the installed print-function to visualize

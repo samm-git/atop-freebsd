@@ -154,8 +154,9 @@ pdb_gettask(int pid, char isproc, time_t btime, struct pinfo **pinfopp)
 void
 pdb_addtask(int pid, struct pinfo *pinfop)
 {
+	if(!pid)
+	    return;
 	register int i	= pid&(NPHASH-1);
-
 	pinfop->phnext 	= phash[i];
 	phash[i] 	= pinfop;
 }
@@ -167,6 +168,9 @@ int
 pdb_deltask(int pid, char isproc)
 {
 	register struct pinfo	*pp, *ppp;
+	
+	if(!pid)
+	    return 0;
 
 	pp = phash[pid&(NPHASH-1)];	/* get proper hash bucket	*/
 
