@@ -1111,9 +1111,8 @@ photosyst(struct sstat *si)
 
 	int ncpu = 0, maxcpus = 0, cur = 0;
 	size_t size;
-	unsigned int ticks = (unsigned int)sysconf(_SC_CLK_TCK),
-	    multiplier = ((uint64_t)1000L / ticks);
-	
+	uint64_t multiplier = ((uint64_t)hertz/100);
+
 	GETSYSCTL("hw.ncpu", ncpu);
 	if(ncpu)
 	    si->cpu.nrcpu = ncpu;
@@ -1129,19 +1128,19 @@ photosyst(struct sstat *si)
 	sysctlbyname("kern.cp_times", &cp_times, &size, NULL, 0);
 	for (i = 0; i < ncpu; i++) {
 	    si->cpu.cpu[i].cpunr	= i;
-	    si->cpu.cpu[i].utime	= cp_times[CP_USER+cur] * multiplier;
+	    si->cpu.cpu[i].utime	= (uint64_t)cp_times[CP_USER+cur] * multiplier;
 	    si->cpu.all.utime += si->cpu.cpu[i].utime;
 	    
-	    si->cpu.cpu[i].ntime	= cp_times[CP_NICE+cur] * multiplier;
+	    si->cpu.cpu[i].ntime	= (uint64_t)cp_times[CP_NICE+cur] * multiplier;
 	    si->cpu.all.ntime += si->cpu.cpu[i].ntime;
 	    
-	    si->cpu.cpu[i].stime	= cp_times[CP_SYS+cur] * multiplier;
+	    si->cpu.cpu[i].stime	= (uint64_t)cp_times[CP_SYS+cur] * multiplier;
 	    si->cpu.all.stime += si->cpu.cpu[i].stime;
 	    
-	    si->cpu.cpu[i].itime	= cp_times[CP_IDLE+cur] * multiplier;
+	    si->cpu.cpu[i].itime	= (uint64_t)cp_times[CP_IDLE+cur] * multiplier;
 	    si->cpu.all.itime += si->cpu.cpu[i].itime;
 
-	    si->cpu.cpu[i].Itime	= cp_times[CP_INTR+cur] * multiplier;
+	    si->cpu.cpu[i].Itime	= (uint64_t)cp_times[CP_INTR+cur] * multiplier;
 	    si->cpu.all.Itime += si->cpu.cpu[i].Itime;
 	    
 	    cur+=CPUSTATES;

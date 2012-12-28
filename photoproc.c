@@ -413,7 +413,7 @@ photoproc(struct tstat *tasklist, int maxtask)
 	static int			firstcall = 1;
 	static unsigned long long	bootepoch;
 	
-	register struct tstat	*curtask = NULL, *prev_curtask = NULL, *temp_proc = NULL;
+	register struct tstat	*curtask = NULL, *prev_curtask = NULL;
 	
 	int		tval=0;
 	
@@ -475,16 +475,20 @@ photoproc(struct tstat *tasklist, int maxtask)
 				*/
 				is_proc = 0;
 				curthr = tasklist+tval ;
-				temp_proc=prev_curtask;
 				procstat(curthr, bootepoch, is_proc, pbase);
 				procthr(curthr, pbase);
 			}
 			else {
 				is_proc = 1;
 				curtask = tasklist+tval;
-				temp_proc=curtask;
 				procstat(curtask, bootepoch, is_proc, pbase);
 				proccmd(curtask, pbase);
+				if(curtask->gen.nthr > 1) { /* add main thread to the threads list */
+					tval++;
+					curthr = tasklist+tval ;
+					procstat(curthr, bootepoch, 0, pbase);
+					procthr(curthr, pbase);
+				}
 			}
 			/* count threads */
 			switch (pbase->ki_stat) {
@@ -511,6 +515,11 @@ photoproc(struct tstat *tasklist, int maxtask)
 	    			    curthr->gen.nthrrun = 1;
 				curtask->gen.nthrrun++;
 			}
+			if(!is_proc) {
+			    curtask->cpu.utime += curthr->cpu.utime;
+			    curtask->cpu.stime += curthr->cpu.stime;
+			}
+
 			prev_pid=pbase->ki_pid;
 			prev_curtask=curtask;
 			tval++;
@@ -736,8 +745,8 @@ procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc, struc
 	curtask->gen.btime    = pp->ki_start.tv_sec;
 	curtask->gen.fsgid    = 0; /* we don`t have it on BSD? */
 	// cpu
-	curtask->cpu.utime    = pp->ki_rusage.ru_utime.tv_sec * 1000 + pp->ki_rusage.ru_utime.tv_usec / 1000;
-	curtask->cpu.stime    = pp->ki_rusage.ru_stime.tv_sec * 1000 + pp->ki_rusage.ru_stime.tv_usec / 1000;
+	curtask->cpu.utime    = ((count_t)pp->ki_rusage.ru_utime.tv_sec + (float)pp->ki_rusage.ru_utime.tv_usec/1000000) * hertz;
+	curtask->cpu.stime    = ((count_t)pp->ki_rusage.ru_stime.tv_sec + (float)pp->ki_rusage.ru_stime.tv_usec/1000000) * hertz;
 	curtask->cpu.prio     = pp->ki_pri.pri_level - PZERO; /* from freebsd top */
 	curtask->cpu.nice     = pp->ki_nice;
 	curtask->cpu.policy   = pp->ki_pri.pri_class; // it is different value then in Linux

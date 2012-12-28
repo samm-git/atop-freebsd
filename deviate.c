@@ -497,6 +497,7 @@ calcdiff(struct tstat *devstat, struct tstat *curstat, struct tstat *prestat,
 	devstat->cpu.utime  =
 		subcount(curstat->cpu.utime, prestat->cpu.utime);
 
+#ifdef linux
 	/*
 	** particular kernel versions sometimes supply a smaller
 	** amount for consumed CPU-ticks than a previous sample;
@@ -508,7 +509,7 @@ calcdiff(struct tstat *devstat, struct tstat *curstat, struct tstat *prestat,
 
 	if (devstat->cpu.utime > totusedcpu)
 		devstat->cpu.utime = 1;
-
+#endif
 	/*
 	** do further calculations
 	*/
