@@ -1,3 +1,4 @@
++ Added memory detection in PAE mode
 # fixed user/system time absolute values
 # fixed thread display and total counter
 

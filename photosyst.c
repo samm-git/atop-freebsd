@@ -1221,10 +1221,17 @@ photosyst(struct sstat *si)
 	* mem.cachemem = Cache, mem.buffermem = Wired, mem.slabmem = Active
 	*/
 	
-	unsigned int freemem = 0, cachemem = 0, inactivemem = 0, wiremem = 0, activemem = 0;
-	GETSYSCTL("hw.physmem", physmem);
-	if(physmem)
-	    si->mem.physmem=physmem/pagesize;
+	unsigned int freemem = 0, cachemem = 0, inactivemem = 0, wiremem = 0, activemem = 0, pae = 0;
+	GETSYSCTL("kern.features.pae", pae);
+	if(pae) {
+	    GETSYSCTL("hw.availpages", physmem);
+	    si->mem.physmem=physmem;
+	}
+	else {
+	    GETSYSCTL("hw.physmem", physmem);
+	    if(physmem)
+		si->mem.physmem=physmem/pagesize;
+	}
 	/*  number of bytes free */
 	GETSYSCTL("vm.stats.vm.v_free_count", freemem);
 	if(freemem)
