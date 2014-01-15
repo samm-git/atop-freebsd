@@ -1,4 +1,5 @@
-+ Added memory detection in PAE mode
+--- atop-freebsd-2.02 beta3 (2014-01-15)
++ Added full memory detection in PAE mode
 # fixed user/system time absolute values
 # fixed thread display and total counter
 
