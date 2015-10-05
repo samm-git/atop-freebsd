@@ -2341,3 +2341,63 @@ struct pridef pridef[] =
 };
 
 int	pricnt = sizeof(pridef)/sizeof(struct pridef);
+                                  */
+/*     Column 2:                                                     */
+/*        Categories of counters used by this function.              */
+/*           c = cpu  counters,    m = memory  counters,             */
+/*           d = disk counters,    n = network counters              */
+/*                                                                   */
+/*     Column 3:                                                     */
+/*        Flag which can be used as command-line argument to         */
+/*        select the function defined in this table-entry. Be sure   */
+/*        that a unique character is choosen.                        */
+/*        Notice that certain flags are reserved!                    */
+/*                                                                   */
+/*     Column 4:                                                     */
+/*        Entry-point of the 'printhead' function.                   */
+/*                                                                   */
+/*     Column 5:                                                     */
+/*        Entry-point of the 'printline' function.                   */
+/*                                                                   */
+/*     Column 6:                                                     */
+/*        Information about the statistics shown by the function     */
+/*        specified by the table-entry. This text is printed as      */
+/*        command-usage.                                             */
+/*********************************************************************/
+struct pridef pridef[] =
+{
+   {0,  "c",  'c',  cpuhead,	cpuline,  	"cpu utilization",        },
+   {0,  "c",  'p',  prochead,	procline,  	"process(or) load",       },
+   {0,  "c",  'P',  taskhead,	taskline,  	"processes & threads",    },
+   {0,  "m",  'm',  memhead,	memline,	"memory & swapspace",     },
+   {0,  "m",  's',  swaphead,	swapline,	"swap rate",              },
+   {0,  "cd", 'l',  lvmhead,	lvmline,	"logical volume activity", },
+   {0,  "cd", 'f',  mddhead,	mddline,	"multiple device activity",},
+   {0,  "cd", 'd',  dskhead,	dskline,	"disk activity",          },
+   {0,  "n",  'n',  nfmhead,	nfmline,	"NFS client mounts",      },
+   {0,  "n",  'j',  nfchead,	nfcline,	"NFS client activity",    },
+   {0,  "n",  'J',  nfshead,	nfsline,	"NFS server activity",    },
+   {0,  "n",  'i',  ifhead,	ifline,		"net-interf (general)",   },
+   {0,  "n",  'I',  IFhead,	IFline,		"net-interf (errors)",    },
+   {0,  "n",  'w',  ipv4head,	ipv4line,	"ip   v4    (general)",   },
+   {0,  "n",  'W',  IPv4head,	IPv4line,	"ip   v4    (errors)",    },
+   {0,  "n",  'y',  icmpv4head,	icmpv4line,	"icmp v4    (general)",   },
+   {0,  "n",  'Y',  ICMPv4head,	ICMPv4line,	"icmp v4    (per type)",  },
+   {0,  "n",  'u',  udpv4head,	udpv4line,  	"udp  v4",                },
+   {0,  "n",  'z',  ipv6head,	ipv6line,	"ip   v6    (general)",   },
+   {0,  "n",  'Z',  IPv6head,	IPv6line,	"ip   v6    (errors)",    },
+   {0,  "n",  'k',  icmpv6head,	icmpv6line,	"icmp v6    (general)",   },
+   {0,  "n",  'K',  ICMPv6head,	ICMPv6line,	"icmp v6    (per type)",  },
+   {0,  "n",  'U',  udpv6head,	udpv6line,  	"udp  v6",                },
+   {0,  "n",  't',  tcphead,	tcpline,  	"tcp        (general)",   },
+   {0,  "n",  'T',  TCPhead,	TCPline,  	"tcp        (errors)",    },
+#if	HTTPSTATS
+   {0,  "n",  'h',  httphead,	httpline,  	"HTTP activity",          },
+#endif
+   {0,  "",   'O',  topchead,	topcline,  	"top-3 processes cpu",    },
+   {0,  "",   'G',  topmhead,	topmline,  	"top-3 processes memory", },
+   {0,  "",   'D',  topdhead,	topdline,  	"top-3 processes disk",   },
+   {0,  "",   'N',  topnhead,	topnline,  	"top-3 processes network",},
+};
+
+int	pricnt = sizeof(pridef)/sizeof(struct pridef);

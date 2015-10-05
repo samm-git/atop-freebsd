@@ -51,6 +51,7 @@ static int		netexitfd = -1;
 static struct naheader	*nahp;
 static int		semid     = -1;
 static unsigned long	lastseq;
+
 /*
 ** storage of last exited tasks read from exitfile
 ** every exitstore struct is registered in hash buckets,
@@ -80,9 +81,7 @@ static void	fill_networkcnt(struct tstat *, struct tstat *,
 void
 netatop_ipopen(void)
 {
-#ifdef linux
 	netsock = socket(PF_INET, SOCK_RAW, IPPROTO_RAW);
-#endif
 }
 
 /*
@@ -92,7 +91,6 @@ netatop_ipopen(void)
 void
 netatop_probe(void)
 {
-#ifdef linux
 	struct sembuf   	semdecr = {1, -1, SEM_UNDO};
 	socklen_t		sl = 0;
 	struct stat		exstat;
@@ -112,6 +110,7 @@ netatop_probe(void)
 		supportflags &= ~NETATOPD;
 		return;
 	}
+
 	// set appropriate support flag
 	supportflags |= NETATOP;
 
@@ -192,10 +191,6 @@ netatop_probe(void)
 
 	// set appropriate support flag
 	supportflags |= NETATOPD;
-#elif defined(FREEBSD)
-	lastseq = 0; // avoid warnings
-	return;
-#endif
 }
 
 void
@@ -229,7 +224,6 @@ netatop_signoff(void)
 void
 netatop_gettask(pid_t id, char type, struct tstat *tp)
 {
-#ifdef linux
 	struct netpertask	npt;
 	socklen_t		socklen = sizeof npt;
 	int 			cmd = (type == 'g' ?
@@ -282,7 +276,6 @@ netatop_gettask(pid_t id, char type, struct tstat *tp)
 	tp->net.udprcv = npt.tc.udprcvpacks;
 	tp->net.udpssz = npt.tc.udpsndbytes;
 	tp->net.udprsz = npt.tc.udprcvbytes;
-#endif
 }
 
 /*
@@ -292,7 +285,6 @@ netatop_gettask(pid_t id, char type, struct tstat *tp)
 unsigned int
 netatop_exitstore(void)
 {
-#ifdef linux
 	socklen_t		socklen = 0, nexitnet, sz, nr=0;
 	unsigned long		uncomplen;
 	unsigned char		nextsize;
@@ -300,6 +292,7 @@ netatop_exitstore(void)
 	unsigned char		databuf[nahp->ntplen];
 	struct netpertask	*tmp = (struct netpertask *)databuf;
 	struct exitstore	*esp;
+
         regainrootprivs();
 
 	/*
@@ -420,10 +413,8 @@ netatop_exitstore(void)
 	}
 
 	exitnum = nr;
+
 	return nr;
-#elif defined(FREEBSD)
-	return 0;
-#endif
 }
 
 /*

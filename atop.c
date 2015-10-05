@@ -91,18 +91,18 @@
 **	Calculates the differences between the current system-level
 ** 	counters and the corresponding counters of the previous cycle.
 **
-**    -	deviatproc()
+**    -	deviattask()
 **	Calculates the differences between the current task-level
 ** 	counters and the corresponding counters of the previous cycle.
 **	The per-task counters of the previous cycle are stored in the
 **	task-database; this "database" is implemented as a linked list
-**	of task-info structures in memory (so no disk-accesses needed).
+**	of taskinfo structures in memory (so no disk-accesses needed).
 **	Within this linked list hash-buckets are maintained for fast searches.
 **	The entire task-database is handled via a set of well-defined 
 ** 	functions from which the name starts with "pdb_..." (see the
 **	source-file procdbase.c).
 **	The processes which have been finished during the last cycle
-** 	are also treated by deviatproc() in order to calculate what their
+** 	are also treated by deviattask() in order to calculate what their
 **	resource-usage was before they finished.
 **
 ** All information is ready to be visualized now.
@@ -298,14 +298,6 @@ static const char rcsid[] = "$Id: atop.c,v 1.49 2010/10/23 14:01:00 gerlof Exp $
 #include "showgeneric.h"
 #include "parseable.h"
 
-#ifdef FREEBSD // FreeBSD using kvm to manage processes
- #include <kvm.h>
- #include <devstat.h>
- #include <paths.h>
- #include <err.h>
- kvm_t *kd = NULL;
-#endif
-
 #define	allflags  "ab:cde:fghijklmnopqrstuvwxyz1ABCDEFGHIJKL:MNOP:QRSTUVWXYZ"
 #define	PROCCHUNK	100	/* process-entries for future expansion  */
 #define	MAXFL		64      /* maximum number of command-line flags  */
@@ -327,9 +319,9 @@ char		rawreadflag;
 unsigned int	begintime, endtime;
 char		flaglist[MAXFL];
 char		deviatonly = 1;
-char		filterkernel = 1;
 char      	usecolors  = 1;  /* boolean: colors for high occupation  */
 char		threadview = 0;	 /* boolean: show individual threads     */
+char      	calcpss    = 0;  /* boolean: read/calculate process PSS  */
 
 unsigned short	hertz;
 unsigned int	pagesize;
@@ -354,7 +346,7 @@ static char		midnightflag;
 /*
 ** interpretation of defaults-file /etc/atoprc and $HOME/.atop
 */
-static void		readrc(char *);
+static void		readrc(char *, int);
 
 void do_flags(char *, char *);
 void do_interval(char *, char *);
@@ -366,6 +358,12 @@ void do_maxdisk(char *, char *);
 void do_maxmdd(char *, char *);
 void do_maxlvm(char *, char *);
 void do_maxintf(char *, char *);
+void do_maxnfsm(char *, char *);
+void do_maxcont(char *, char *);
+void do_colinfo(char *, char *);
+void do_colalmost(char *, char *);
+void do_colcrit(char *, char *);
+void do_colthread(char *, char *);
 void do_ownsysprcline(char *, char *);
 void do_ownallcpuline(char *, char *);
 void do_ownindivcpuline(char *, char *);
@@ -386,42 +384,51 @@ void do_netcritperc(char *, char *);
 void do_swoutcritsec(char *, char *);
 void do_almostcrit(char *, char *);
 void do_atopsarflags(char *, char *);
+void do_pacctdir(char *, char *);
 
 static struct {
 	char	*tag;
 	void	(*func)(char *, char *);
+	int	sysonly;
 } manrc[] = {
-	{	"flags",		do_flags		},
-	{	"interval",		do_interval		},
-	{	"linelen",		do_linelength		},
-	{	"username",		do_username		},
-	{	"procname",		do_procname		},
-	{	"maxlinecpu",		do_maxcpu		},
-	{	"maxlinedisk",		do_maxdisk		},
-	{	"maxlinemdd",		do_maxmdd		},
-	{	"maxlinelvm",		do_maxlvm		},
-	{	"maxlineintf",		do_maxintf		},
-	{	"ownallcpuline",	do_ownallcpuline	},
-	{	"ownonecpuline",	do_ownindivcpuline	},
-	{	"owncplline",		do_owncplline		},
-	{	"ownmemline",		do_ownmemline		},
-	{	"ownswpline",		do_ownswpline		},
-	{	"ownpagline",		do_ownpagline		},
-	{	"owndskline",		do_owndskline		},
-	{	"ownnettrline",		do_ownnettransportline	},
-	{	"ownnetnetline",	do_ownnetnetline	},
-	{	"ownnetifline",	        do_ownnetinterfaceline	},
-	{	"ownprocline",		do_ownprocline		},
-	{	"ownsysprcline",	do_ownsysprcline	},
-	{	"owndskline",	        do_owndskline		},
-	{	"cpucritperc",		do_cpucritperc		},
-	{	"memcritperc",		do_memcritperc		},
-	{	"swpcritperc",		do_swpcritperc		},
-	{	"dskcritperc",		do_dskcritperc		},
-	{	"netcritperc",		do_netcritperc		},
-	{	"swoutcritsec",		do_swoutcritsec		},
-	{	"almostcrit",		do_almostcrit		},
-	{	"atopsarflags",		do_atopsarflags		},
+	{	"flags",		do_flags,		0, },
+	{	"interval",		do_interval,		0, },
+	{	"linelen",		do_linelength,		0, },
+	{	"username",		do_username,		0, },
+	{	"procname",		do_procname,		0, },
+	{	"maxlinecpu",		do_maxcpu,		0, },
+	{	"maxlinedisk",		do_maxdisk,		0, },
+	{	"maxlinemdd",		do_maxmdd,		0, },
+	{	"maxlinelvm",		do_maxlvm,		0, },
+	{	"maxlineintf",		do_maxintf,		0, },
+	{	"maxlinenfsm",		do_maxnfsm,		0, },
+	{	"maxlinecont",		do_maxcont,		0, },
+	{	"colorinfo",		do_colinfo,		0, },
+	{	"coloralmost",		do_colalmost,		0, },
+	{	"colorcritical",	do_colcrit,		0, },
+	{	"colorthread",		do_colthread,		0, },
+	{	"ownallcpuline",	do_ownallcpuline,	0, },
+	{	"ownonecpuline",	do_ownindivcpuline,	0, },
+	{	"owncplline",		do_owncplline,		0, },
+	{	"ownmemline",		do_ownmemline,		0, },
+	{	"ownswpline",		do_ownswpline,		0, },
+	{	"ownpagline",		do_ownpagline,		0, },
+	{	"owndskline",		do_owndskline,		0, },
+	{	"ownnettrline",		do_ownnettransportline,	0, },
+	{	"ownnetnetline",	do_ownnetnetline,	0, },
+	{	"ownnetifline",	        do_ownnetinterfaceline,	0, },
+	{	"ownprocline",		do_ownprocline,		0, },
+	{	"ownsysprcline",	do_ownsysprcline,	0, },
+	{	"owndskline",	        do_owndskline,		0, },
+	{	"cpucritperc",		do_cpucritperc,		0, },
+	{	"memcritperc",		do_memcritperc,		0, },
+	{	"swpcritperc",		do_swpcritperc,		0, },
+	{	"dskcritperc",		do_dskcritperc,		0, },
+	{	"netcritperc",		do_netcritperc,		0, },
+	{	"swoutcritsec",		do_swoutcritsec,	0, },
+	{	"almostcrit",		do_almostcrit,		0, },
+	{	"atopsarflags",		do_atopsarflags,	0, },
+	{	"pacctdir",		do_pacctdir,		1, },
 };
 
 /*
@@ -456,7 +463,7 @@ main(int argc, char *argv[])
 	/*
 	** read defaults-files /etc/atoprc en $HOME/.atoprc (if any)
 	*/
-	readrc("/etc/atoprc");
+	readrc("/etc/atoprc", 1);
 
 	if ( (p = getenv("HOME")) )
 	{
@@ -464,7 +471,7 @@ main(int argc, char *argv[])
 
 		snprintf(path, sizeof path, "%s/.atoprc", p);
 
-		readrc(path);
+		readrc(path, 0);
 	}
 
 	/*
@@ -525,11 +532,11 @@ main(int argc, char *argv[])
 				break;
 
                            case 'a':		/* all processes per sample ? */
-				deviatonly=0;
+				deviatonly = 0;
 				break;
 
-                           case 'U':		/* Show kernel "processes" */
-				filterkernel=0;
+                           case 'R':		/* all processes per sample ? */
+				calcpss = 1;
 				break;
 
                            case 'b':		/* begin time ?               */
@@ -618,6 +625,11 @@ main(int argc, char *argv[])
 	curtime = getboot() / hertz;
 
 	/*
+	** be sure to be leader of an own process group
+	*/
+	(void) setpgid(0, 0);
+
+	/*
 	** catch signals for proper close-down
 	*/
 	signal(SIGHUP,  cleanstop);
@@ -645,38 +657,14 @@ main(int argc, char *argv[])
 	** during heavy CPU load);
 	** ignored if not running under superuser priviliges!
 	*/
-	nice(-20);
+	if ( nice(-20) == -1)
+		;
 
 	/*
 	** switch-on the process-accounting mechanism to register the
 	** (remaining) resource-usage by processes which have finished
 	*/
 	acctreason = acctswon();
-
-#ifdef FREEBSD
-	/* 
-	** The functions kvm_open()  return a descriptor used to
-	** access kernel virtual memory via the kvm(3) library routines
-	** error reporting disabled because it may break ncurses
-	*/
-	kd = kvm_open(NULL, _PATH_DEVNULL, NULL, O_RDONLY, NULL);
-	/*
-	 * Make sure that the userland devstat version matches the kernel
-	 * devstat version.  If not, exit and print a message informing
-	 * the user of his mistake.
-	 */
-	if (devstat_checkversion(NULL) < 0)
-		errx(1, "%s", devstat_errbuf);
-	/* Limit maximum of memory allowed to allocate. Some users
-	 * reported problem with atop eating all memory. While 
-	 i am unable to repeat it or find possible reason it is better to 
-	 make the limit instead of eating all available RAM */
-	/* set 100mb vmem limit */
-	#define ATOP_MAXVMEM 100 * 1024 * 1024; 
-	struct rlimit lim;
-	lim.rlim_cur = lim.rlim_max = ATOP_MAXVMEM;
-	setrlimit(RLIMIT_VMEM, &lim);
-#endif
 
 	/*
 	** determine properties (like speed) of all interfaces
@@ -728,17 +716,24 @@ engine(void)
 	/*
 	** reserve space for task-level statistics
 	*/
-	static struct tstat	*curpact;	/* current active list  */
-	static int		curplen;	/* current active size  */
+	static struct tstat	*curtpres;	/* current present list      */
+	static int		 curtlen;	/* size of present list      */
 
-	struct tstat		*curpexit;	/* exited process list	*/
-	struct tstat		*devtstat;	/* deviation list	*/
-	struct tstat		**devpstat;	/* pointers to processes*/
-						/* in deviation list    */
+	struct tstat		*curpexit;	/* exited process list	     */
+	struct tstat		*devtstat;	/* deviation list	     */
+	struct tstat		**devpstat;	/* pointers to processes     */
+						/* in deviation list         */
 
-	unsigned int		ntask, nexit, nexitnet;
-	unsigned int		noverflow, ndeviat, nactproc;
-	int			totproc, totrun, totslpi, totslpu, totzombie;
+	unsigned int		ntaskpres;	/* number of tasks present   */
+	unsigned int		nprocexit;	/* number of exited procs    */
+	unsigned int		nprocexitnet;	/* number of exited procs    */
+						/* via netatopd daemon       */
+
+	unsigned int		ntaskdev;       /* nr of tasks deviated      */
+	unsigned int		nprocdev;       /* nr of procs deviated      */
+	int			nprocpres;	/* nr of procs present       */
+	int			totrun, totslpi, totslpu, totzombie;
+	unsigned int		noverflow;
 
 	/*
 	** initialization: allocate required memory dynamically
@@ -747,13 +742,13 @@ engine(void)
 	presstat = calloc(1, sizeof(struct sstat));
 	devsstat = calloc(1, sizeof(struct sstat));
 
-	curplen  = countprocs() * 3 / 2;	/* add 50% for threads */
-	curpact  = calloc(curplen, sizeof(struct tstat));
+	curtlen  = countprocs() * 3 / 2;	/* add 50% for threads */
+	curtpres = calloc(curtlen, sizeof(struct tstat));
 
 	ptrverify(cursstat, "Malloc failed for current sysstats\n");
 	ptrverify(presstat, "Malloc failed for prev    sysstats\n");
 	ptrverify(devsstat, "Malloc failed for deviate sysstats\n");
-	ptrverify(curpact,  "Malloc failed for %d procstats\n", curplen);
+	ptrverify(curtpres, "Malloc failed for %d procstats\n", curtlen);
 
 	/*
 	** install the signal-handler for ALARM, USR1 and USR2 (triggers
@@ -838,7 +833,8 @@ engine(void)
 
 		photosyst(cursstat);	/* obtain new counters      */
 
-		deviatsyst(cursstat, presstat, devsstat);
+		deviatsyst(cursstat, presstat, devsstat,
+				curtime-pretime > 0 ? curtime-pretime : 1);
 
 		/*
 		** take a snapshot of the current task-level statistics 
@@ -849,19 +845,19 @@ engine(void)
 		**  --> atop malloc's a minimal amount of space which is
 		**      only extended when needed
 		*/
-		memset(curpact, 0, curplen * sizeof(struct tstat));
+		memset(curtpres, 0, curtlen * sizeof(struct tstat));
 
-		while ( (ntask = photoproc(curpact, curplen)) == curplen)
+		while ( (ntaskpres = photoproc(curtpres, curtlen)) == curtlen)
 		{
-			curplen += PROCCHUNK;
+			curtlen += PROCCHUNK;
 
-			curpact = realloc(curpact,
-					curplen * sizeof(struct tstat));
+			curtpres = realloc(curtpres,
+					curtlen * sizeof(struct tstat));
 
-			ptrverify(curpact,
-			          "Realloc failed for %d tasks\n", curplen);
+			ptrverify(curtpres,
+			          "Realloc failed for %d tasks\n", curtlen);
 
-			memset(curpact, 0, curplen * sizeof(struct tstat));
+			memset(curtpres, 0, curtlen * sizeof(struct tstat));
 		}
 
 		/*
@@ -871,12 +867,12 @@ engine(void)
 		** the number of exited processes is limited to avoid
 		** that atop explodes in memory and introduces OOM killing
 		*/
-		nexit = acctprocnt();	/* number of exited processes */
+		nprocexit = acctprocnt();	/* number of exited processes */
 
-		if (nexit > MAXACCTPROCS)
+		if (nprocexit > MAXACCTPROCS)
 		{
-			noverflow = nexit - MAXACCTPROCS;
-			nexit     = MAXACCTPROCS;
+			noverflow = nprocexit - MAXACCTPROCS;
+			nprocexit = MAXACCTPROCS;
 		}
 		else
 			noverflow = 0;
@@ -886,25 +882,25 @@ engine(void)
 		** for the netatop module (only processes that have
 		** used the network)
 		*/
-		if (nexit > 0 && (supportflags & NETATOPD))
-			nexitnet = netatop_exitstore();
+		if (nprocexit > 0 && (supportflags & NETATOPD))
+			nprocexitnet = netatop_exitstore();
 		else
-			nexitnet = 0;
+			nprocexitnet = 0;
 
 		/*
 		** reserve space for the exited processes and read them
 		*/
-		if (nexit > 0)
+		if (nprocexit > 0)
 		{
-			curpexit = malloc(nexit * sizeof(struct tstat));
+			curpexit = malloc(nprocexit * sizeof(struct tstat));
 
 			ptrverify(curpexit,
 			          "Malloc failed for %d exited processes\n",
-			          nexit);
+			          nprocexit);
 
-			memset(curpexit, 0, nexit * sizeof(struct tstat));
+			memset(curpexit, 0, nprocexit * sizeof(struct tstat));
 
-			nexit = acctphotoproc(curpexit, nexit);
+			nprocexit = acctphotoproc(curpexit, nprocexit);
 
 			/*
  			** reposition offset in accounting file when not
@@ -922,31 +918,31 @@ engine(void)
 		/*
 		** calculate deviations
 		*/
-		devtstat = malloc((ntask+nexit) * sizeof(struct tstat));
+		devtstat = malloc((ntaskpres+nprocexit) * sizeof(struct tstat));
 
-		ptrverify(devtstat, "Malloc failed for %d modified processes\n",
-			          				ntask+nexit);
+		ptrverify(devtstat, "Malloc failed for %d modified tasks\n",
+			          			ntaskpres+nprocexit);
 
-		ndeviat = deviatproc(curpact, ntask, curpexit, nexit, 
-				deviatonly, devtstat, devsstat, &nactproc,
-				&totproc, &totrun, &totslpi, &totslpu, 
-		                &totzombie);
+		ntaskdev = deviattask(curtpres,  ntaskpres,
+		                      curpexit,  nprocexit, deviatonly,
+		                      devtstat,  devsstat,
+		                      &nprocdev, &nprocpres,
+		                      &totrun, &totslpi, &totslpu, &totzombie);
 
   	      	/*
  		** create list of pointers specifically to the process entries
 		** in the task list
 		*/
-       		devpstat = malloc(sizeof (struct tstat *) * nactproc);
+       		devpstat = malloc(sizeof (struct tstat *) * nprocdev);
 
 		ptrverify(devpstat, "Malloc failed for %d process ptrs\n",
-			          				nactproc);
+			          				nprocdev);
 
-		for (i=0, j=0; i < ndeviat; i++)
+		for (i=0, j=0; i < ntaskdev; i++)
 		{
 			if ( (devtstat+i)->gen.isproc)
 				devpstat[j++] = devtstat+i;
 		}
-		nactproc = j;
 
 		/*
 		** activate the installed print-function to visualize
@@ -954,18 +950,18 @@ engine(void)
 		*/
 		lastcmd = (vis.show_samp)( curtime,
 				     curtime-pretime > 0 ? curtime-pretime : 1,
-		           	     devsstat, devtstat, devpstat,
-		                     ndeviat, ntask, nactproc,
-		                     totproc, totrun, totslpi, totslpu,
-		                     totzombie, nexit, noverflow, sampcnt==0);
+		           	     devsstat,  devtstat, devpstat,
+		                     ntaskdev,  ntaskpres, nprocdev, nprocpres, 
+		                     totrun, totslpi, totslpu, totzombie, 
+		                     nprocexit, noverflow, sampcnt==0);
 
 		/*
 		** release dynamically allocated memory
 		*/
-		if (nexit > 0)
+		if (nprocexit > 0)
 			free(curpexit);
 
-		if (nexitnet > 0)
+		if (nprocexitnet > 0)
 			netatop_exiterase();
 
 		free(devtstat);
@@ -979,7 +975,7 @@ engine(void)
 
 			/* set current (will be 'previous') counters to 0 */
 			memset(cursstat, 0,           sizeof(struct sstat));
-			memset(curpact,  0, curplen * sizeof(struct tstat));
+			memset(curtpres, 0, curtlen * sizeof(struct tstat));
 
 			/* remove all tasks in database */
 			pdb_makeresidue();
@@ -1005,12 +1001,11 @@ prusage(char *myname)
 	printf("\tgeneric flags:\n");
 	printf("\t  -%c  show or log all processes (i.s.o. active processes "
 	                "only)\n", MALLPROC);
+	printf("\t  -%c  calculate proportional set size (PSS) per process\n", 
+	                MCALCPSS);
 	printf("\t  -P  generate parseable output for specified label(s)\n");
 	printf("\t  -L  alternate line length (default 80) in case of "
 			"non-screen output\n");
-#ifdef FREEBSD
-	printf("\t  -U  Show FreeBSD kernel processes (filtered by default)\n");
-#endif
 
 	(*vis.show_usage)();
 
@@ -1031,6 +1026,8 @@ prusage(char *myname)
 	printf("forced manually by sending signal USR1"
 			" (kill -USR1 pid_atop)\n");
 	printf("or with the keystroke '%c' in interactive mode.\n", MSAMPNEXT);
+	printf("\n");
+	printf("Please refer to the man-page of 'atop' for more details.\n");
 
 	cleanstop(1);
 }
@@ -1087,7 +1084,7 @@ do_linelength(char *name, char *val)
 ** read RC-file and modify defaults accordingly
 */
 static void
-readrc(char *path)
+readrc(char *path, int syslevel)
 {
 	int	i, nr, line=0, errorcnt = 0;
 
@@ -1152,8 +1149,20 @@ readrc(char *path)
 			*/
 			for (i=0; i < sizeof manrc/sizeof manrc[0]; i++)
 			{
-				if ( strcmp(tagname, manrc[i].tag) ==0)
+				if ( strcmp(tagname, manrc[i].tag) == 0)
 				{
+					if (manrc[i].sysonly && !syslevel)
+					{
+						fprintf(stderr,
+						   "%s: warning at line %2d "
+						   "- tag name %s not allowed "
+						   "in private atoprc\n",
+							path, line, tagname);
+
+						errorcnt++;
+						break;
+					}
+
 					manrc[i].func(tagname, tagvalue);
 					break;
 				}

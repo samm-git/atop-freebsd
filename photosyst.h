@@ -23,41 +23,51 @@
 */
 #include "netstats.h"
 
-#define	MAXCPUS		2048
-#define	MAXDSK		512
-#define	MAXLVM		1024
+#define	MAXCPU		2048
+#define	MAXDSK		1024
+#define	MAXLVM		2048
 #define	MAXMDD		256
 #define	MAXINTF		128
+#define	MAXCONTAINER	128
+#define	MAXNFSMOUNT	64
 
 #define	MAXDKNAM	32
 
 /************************************************************************/
 
 struct	memstat {
-	count_t	physmem;	/* number of physical pages 	*/
-	count_t	freemem;	/* number of free     pages	*/
-	count_t	buffermem;	/* number of buffer   pages	*/
-	count_t	slabmem;	/* number of slab     pages	*/
-	count_t	cachemem;	/* number of cache    pages	*/
-	count_t	cachedrt;	/* number of cache    pages (dirty)	*/
+	count_t	physmem;	// number of physical pages
+	count_t	freemem;	// number of free     pages
+	count_t	buffermem;	// number of buffer   pages
+	count_t	slabmem;	// number of slab     pages
+	count_t	cachemem;	// number of cache    pages
+	count_t	cachedrt;	// number of cache    pages (dirty)
 
-	count_t	totswap;	/* number of pages in swap	*/
-	count_t	freeswap;	/* number of free swap pages	*/
+	count_t	totswap;	// number of pages in swap
+	count_t	freeswap;	// number of free swap pages
 
-	count_t	pgscans;	/* number of page scans		*/
-	count_t	pgsteal;	/* number of page steals	*/
-	count_t	allocstall;	/* try to free pages forced	*/
-	count_t	swouts;		/* number of pages swapped out	*/
-	count_t	swins;		/* number of pages swapped in	*/
+	count_t	pgscans;	// number of page scans
+	count_t	pgsteal;	// number of page steals
+	count_t	allocstall;	// try to free pages forced
+	count_t	swouts;		// number of pages swapped out
+	count_t	swins;		// number of pages swapped in
 
-	count_t	commitlim;	/* commit limit in pages	*/
-	count_t	committed;	/* number of reserved pages	*/
+	count_t	commitlim;	// commit limit in pages
+	count_t	committed;	// number of reserved pages
 
-	count_t	shmem;		/* tot shmem incl. tmpfs (pag)	*/
-	count_t	shmrss;		/* resident shared memory (pag)	*/
-	count_t	shmswp;		/* swapped shared memory (pag)	*/
+	count_t	shmem;		// tot shmem incl. tmpfs (pages)
+	count_t	shmrss;		// resident shared memory (pages)
+	count_t	shmswp;		// swapped shared memory (pages)
 
-	count_t	slabreclaim;	/* reclaimable slab (pages)     */
+	count_t	slabreclaim;	// reclaimable slab (pages)
+
+	count_t	tothugepage;	// total huge pages (huge pages)
+	count_t	freehugepage;	// free  huge pages (huge pages)
+	count_t	hugepagesz;	// huge page size (bytes)
+
+	count_t	vmwballoon;	// vmware claimed balloon pages
+
+	count_t	cfuture[8];	// reserved for future use
 };
 
 /************************************************************************/
@@ -95,7 +105,7 @@ struct percpu {
 	count_t		steal;	/* steal   time in clock ticks		*/
 	count_t		guest;	/* guest   time in clock ticks		*/
         struct freqcnt	freqcnt;/* frequency scaling info  		*/
-	count_t		cfuture[1];	/* reserved for future use	*/
+	count_t		cfuture[4];	/* reserved for future use	*/
 };
 
 struct	cpustat {
@@ -109,7 +119,7 @@ struct	cpustat {
 	count_t	cfuture[4];	/* reserved for future use	*/
 
 	struct percpu   all;
-	struct percpu   cpu[MAXCPUS];
+	struct percpu   cpu[MAXCPU];
 };
 
 /************************************************************************/
@@ -121,7 +131,6 @@ struct	perdsk {
         count_t	nwrite;	/* number of write transfers            */
         count_t	nwsect;	/* number of sectors written            */
         count_t	io_ms;	/* number of millisecs spent for I/O    */
-        float	busy_pct;	/* absolute %of busy time  */
         count_t	avque;	/* average queue length                 */
 	count_t	cfuture[4];	/* reserved for future use	*/
 };
@@ -160,7 +169,9 @@ struct	perintf {
 	count_t scompr; /* transmit compressed                  */
 	count_t	sfuture[4];	/* reserved for future use	*/
 
+	char 	type;	/* interface type ('e'/'w'/'?')  	*/
 	long 	speed;	/* interface speed in megabits/second	*/
+	long 	speedp;	/* previous interface speed 		*/
 	char	duplex;	/* full duplex (boolean) 		*/
 	count_t	cfuture[4];	/* reserved for future use	*/
 };
@@ -168,6 +179,85 @@ struct	perintf {
 struct intfstat {
 	int		nrintf;
 	struct perintf	intf[MAXINTF];
+};
+
+/************************************************************************/
+
+struct  pernfsmount {
+        char 	mountdev[128];		/* mountdevice 			*/
+        count_t	age;			/* number of seconds mounted	*/
+	
+	count_t	bytesread;		/* via normal reads		*/
+	count_t	byteswrite;		/* via normal writes		*/
+	count_t	bytesdread;		/* via direct reads		*/
+	count_t	bytesdwrite;		/* via direct writes		*/
+	count_t	bytestotread;		/* via reads			*/
+	count_t	bytestotwrite;		/* via writes			*/
+	count_t	pagesmread;		/* via mmap  reads		*/
+	count_t	pagesmwrite;		/* via mmap  writes		*/
+
+	count_t	future[8];
+};
+
+struct nfsstat {
+	struct {
+        	count_t	netcnt;
+		count_t netudpcnt;
+		count_t nettcpcnt;
+		count_t nettcpcon;
+
+		count_t rpccnt;
+		count_t rpcbadfmt;
+		count_t rpcbadaut;
+		count_t rpcbadcln;
+
+		count_t rpcread;
+		count_t rpcwrite;
+
+	   	count_t	rchits;		/* repcache hits	*/
+	   	count_t	rcmiss;		/* repcache misses	*/
+	   	count_t	rcnoca;		/* uncached requests	*/
+
+	   	count_t	nrbytes;	/* read bytes		*/
+	   	count_t	nwbytes;	/* written bytes	*/
+
+		count_t	future[8];
+	} server;
+
+	struct {
+		count_t	rpccnt;
+		count_t rpcretrans;
+		count_t rpcautrefresh;
+
+		count_t rpcread;
+		count_t rpcwrite;
+
+		count_t	future[8];
+	} client;
+
+	struct {
+        	int             	nrmounts;
+       		struct pernfsmount	nfsmnt[MAXNFSMOUNT];
+	} nfsmounts;
+};
+
+/************************************************************************/
+
+struct  percontainer {
+        unsigned long	ctid;		/* container id			*/
+        unsigned long	numproc;	/* number of processes		*/
+
+        count_t system;  	/* */
+        count_t user;  		/* */
+        count_t nice;  		/* */
+        count_t uptime; 	/* */
+
+        count_t physpages; 	/* */
+};
+
+struct contstat {
+        int             	nrcontainer;
+        struct percontainer	cont[MAXCONTAINER];
 };
 
 /************************************************************************/
@@ -195,6 +285,8 @@ struct	sstat {
 	struct netstat	net;
 	struct intfstat	intf;
 	struct dskstat  dsk;
+	struct nfsstat  nfs;
+	struct contstat cfs;
 
 	struct wwwstat	www;
 };
@@ -203,5 +295,5 @@ struct	sstat {
 ** prototypes
 */
 void	photosyst (struct sstat *);
-void	deviatsyst(struct sstat *, struct sstat *, struct sstat *);
+void	deviatsyst(struct sstat *, struct sstat *, struct sstat *, long);
 void	totalsyst (char,           struct sstat *, struct sstat *);

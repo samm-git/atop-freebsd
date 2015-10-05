@@ -1,4 +1,4 @@
-.TH ATOPRC 5 "October 2012" "Linux"
+.TH ATOPRC 5 "April 2015" "Linux"
 .SH NAME
 .B atoprc
 - atop/atopsar related rcfile
@@ -32,7 +32,7 @@ A list of default flags for
 .B atop
 can be defined here. The flags which are allowed
 are 'g', 'm', 'd', 'n', 'u', 'p', 's', 'c', 'v', 'C', 'M', 'D', 'N', 'A',
-\&'a', 'y', 'f', 'F', '1' and 'x'.
+\&'a', 'y', 'f', 'F', 'G', 'R', '1' and 'x'.
 .PP
 .TP 4
 .B interval
@@ -68,8 +68,16 @@ The maximum number of active multiple devices that will be shown.
 The maximum number of active disks that will be shown.
 .PP
 .TP 4
+.B maxlinenfsm
+The maximum number of NFS mounts that will be shown on an NFS client.
+.PP
+.TP 4
 .B maxlineintf
 The maximum number of active network interfaces that will be shown.
+.PP
+.TP 4
+.B maxlinecont
+The maximum number of active containers that will be shown.
 .PP
 .TP 4
 .B cpucritperc
@@ -149,12 +157,54 @@ When this value is zero, no line coloring for `almost critical' is
 performed.
 .PP
 .TP 4
+.B colorinfo
+Definition of color name for information messages (default: green).
+.br
+Allowed colors are: red green yellow blue magenta cyan black white.
+.PP
+.TP 4
+.B colorthread
+Definition of color name for thread-specific lines when using
+the 'y' option (default: yellow).
+.br
+Allowed colors are: red green yellow blue magenta cyan black white.
+.PP
+.TP 4
+.B coloralmost
+Definition of color name for almost critical resources (default: cyan).
+.br
+Allowed colors are: red green yellow blue magenta cyan black white.
+.PP
+.TP 4
+.B colorcritical
+Definition of color name for critical resources (default: red).
+.br
+Allowed colors are: red green yellow blue magenta cyan black white.
+.PP
+.TP 4
 .B atopsarflags
 A list of default flags for
 .B atopsar
 can be defined here. The flags that are allowed
 are 'S', 'x', 'C', 'M', 'H', 'a', 'A' and the flags to select
 one or more specific reports.
+.PP
+.TP 4
+.B pacctdir
+The name of the topdirectory used by the
+.B atopacctd
+daemon. In this directory, the daemon creates a subdirectory 
+.B pacct_shadow.d
+in which files will be written containing the process accounting records.
+The default topdirectory is
+.B /var/run
+and this option only has to be specified when the
+.B atopacctd
+daemon is started with an alternative topdirectory as command line argument.
+.br
+This option can only be specified in the 
+.B /etc/atoprc
+file (on system level)!
 .PP
 An example of the
 .B /etc/atoprc
@@ -194,7 +244,7 @@ subsequent section.
 Via the rcfile it is possible to define the layout of the output lines
 yourself, i.e. you can define the layout of one line with process information
 with the keyword 'ownprocline' (to be selected with the key 'o'
-or the flag -o) and you can redefine all lines with system information.
+or the flag \-o) and you can redefine all lines with system information.
 .PP
 The layout of an output-line can be defined as follows
 (notice that this should be specified as one line in the rcfile):
@@ -341,6 +391,7 @@ flag (in a very wide window you should be able to see all of the columns).
 .SH SEE ALSO
 .B atop(1),
 .B atopsar(1),
+.B atopacctd(8),
 .B netatop(4),
 .B netatopd(8),
 .B logrotate(8)

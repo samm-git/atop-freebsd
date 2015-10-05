@@ -94,11 +94,7 @@ static const char rcsid[] = "$Id: showprocs.c,v 1.15 2011/09/05 11:44:16 gerlof 
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#ifdef linux
- #include <termio.h>
-#elif defined(FREEBSD)
- #include <sys/priority.h>
-#endif
+#include <termio.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -468,33 +464,23 @@ char *
 procprt_TID_ae(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
-#ifdef linux
-	if (curstat->gen.isproc)
-        	sprintf(buf, "    -");
-	else
-        	sprintf(buf, "%5d", curstat->gen.pid);
-#elif defined(FREEBSD)
+
 	if (curstat->gen.isproc)
         	sprintf(buf, "     -");
 	else
         	sprintf(buf, "%6d", curstat->gen.pid);
-#endif
         return buf;
 }
 
 proc_printdef procprt_TID = 
-#ifdef linux
-   { "  TID", "TID", procprt_TID_ae, procprt_TID_ae, 5 };
-#elif defined(FREEBSD)
    { "   TID", "TID", procprt_TID_ae, procprt_TID_ae, 6 };
-#endif
 /***************************************************************/
 char *
 procprt_PID_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
 
-        sprintf(buf, "%5d", curstat->gen.tgid);
+        sprintf(buf, "%6d", curstat->gen.tgid);
         return buf;
 }
 
@@ -504,14 +490,14 @@ procprt_PID_e(struct tstat *curstat, int avgval, int nsecs)
         static char buf[10];
 
         if (curstat->gen.pid == 0)
-                return "    ?";
+                return "     ?";
 
-        sprintf(buf, "%5d", curstat->gen.tgid);
+        sprintf(buf, "%6d", curstat->gen.tgid);
         return buf;
 }
 
 proc_printdef procprt_PID = 
-   { "  PID", "PID", procprt_PID_a, procprt_PID_e, 5 };
+   { "   PID", "PID", procprt_PID_a, procprt_PID_e, 6 };
 
 /***************************************************************/
 char *
@@ -519,7 +505,7 @@ procprt_PPID_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
 
-        sprintf(buf, "%5d", curstat->gen.ppid);
+        sprintf(buf, "%6d", curstat->gen.ppid);
         return buf;
 }
 
@@ -527,33 +513,48 @@ procprt_PPID_a(struct tstat *curstat, int avgval, int nsecs)
 char *
 procprt_PPID_e(struct tstat *curstat, int avgval, int nsecs)
 {
-        return "    -";
+        return "     -";
 }
 
 proc_printdef procprt_PPID = 
-   { " PPID", "PPID", procprt_PPID_a, procprt_PPID_e, 5 };
-
+   { "  PPID", "PPID", procprt_PPID_a, procprt_PPID_e, 6 };
 
 /***************************************************************/
 char *
-procprt_JID_a(struct tstat *curstat, int avgval, int nsecs)
+procprt_CTID_a(struct tstat *curstat, int avgval, int nsecs)
 {
-     static char buf[10];
+        static char buf[32];
 
-     sprintf(buf, "%5d", curstat->gen.jid);
-     return buf;
+        sprintf(buf, "%5d", curstat->gen.ctid);
+        return buf;
 }
-
 
 char *
-procprt_JID_e(struct tstat *curstat, int avgval, int nsecs)
+procprt_CTID_e(struct tstat *curstat, int avgval, int nsecs)
 {
-     return "     ";
+        return "    -";
 }
 
-proc_printdef procprt_JID = 
-    { "  JID", "JID", procprt_JID_a, procprt_JID_e, 5 };
+proc_printdef procprt_CTID = 
+   { " CTID", "CTID", procprt_CTID_a, procprt_CTID_e, 5 };
+/***************************************************************/
+char *
+procprt_VPID_a(struct tstat *curstat, int avgval, int nsecs)
+{
+        static char buf[32];
 
+        sprintf(buf, "%6d", curstat->gen.vpid);
+        return buf;
+}
+
+char *
+procprt_VPID_e(struct tstat *curstat, int avgval, int nsecs)
+{
+        return "     -";
+}
+
+proc_printdef procprt_VPID = 
+   { "  VPID", "VPID", procprt_VPID_a, procprt_VPID_e, 6 };
 /***************************************************************/
 char *
 procprt_SYSCPU_ae(struct tstat *curstat, int avgval, int nsecs)
@@ -692,6 +693,27 @@ procprt_RSIZE_e(struct tstat *curstat, int avgval, int nsecs)
 
 proc_printdef procprt_RSIZE = 
    { " RSIZE", "RSIZE", procprt_RSIZE_a, procprt_RSIZE_e, 6 };
+/***************************************************************/
+char *
+procprt_PSIZE_a(struct tstat *curstat, int avgval, int nsecs)
+{
+        static char buf[10];
+
+	if (curstat->mem.pmem == (unsigned long long)-1LL)	
+        	return "    ?K";
+
+       	val2memstr(curstat->mem.pmem*1024, buf, KBFORMAT, 0, 0);
+        return buf;
+}
+
+char *
+procprt_PSIZE_e(struct tstat *curstat, int avgval, int nsecs)
+{
+        return "    0K";
+}
+
+proc_printdef procprt_PSIZE = 
+   { " PSIZE", "PSIZE", procprt_PSIZE_a, procprt_PSIZE_e, 6 };
 /***************************************************************/
 char *
 procprt_VSLIBS_a(struct tstat *curstat, int avgval, int nsecs)
@@ -1156,7 +1178,6 @@ proc_printdef procprt_TSLPU =
 char *
 procprt_POLI_a(struct tstat *curstat, int avgval, int nsecs)
 {
-#ifdef linux
         switch (curstat->cpu.policy)
         {
                 case SCHED_NORMAL:
@@ -1178,23 +1199,7 @@ procprt_POLI_a(struct tstat *curstat, int avgval, int nsecs)
                         return "idle";
                         break;
         }
-#elif defined(FREEBSD)
-	switch PRI_BASE(curstat->cpu.policy){
-	    case PRI_ITHD:
-		return "intr";
-		break;
-	    case PRI_REALTIME:
-		return "rltm";
-		break;
-	    case PRI_TIMESHARE:
-		return "tmsh";
-		break;
-	    case PRI_IDLE:
-		return "idle";
-		break;
-	}
-#endif
-	return "?   ";
+        return "?   ";
 }
 
 char *
@@ -1411,7 +1416,7 @@ char *
 procprt_RDDSK_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
-        val2memstr(curstat->dsk.rsz*512, buf, KBFORMAT, 0, 0);
+        val2memstr(curstat->dsk.rsz*512, buf, KBFORMAT, avgval, nsecs);
 
         return buf;
 }
@@ -1430,7 +1435,7 @@ procprt_WRDSK_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
 
-        val2memstr(curstat->dsk.wsz*512, buf, KBFORMAT, 0, 0);
+        val2memstr(curstat->dsk.wsz*512, buf, KBFORMAT, avgval, nsecs);
 
         return buf;
 }
@@ -1455,7 +1460,7 @@ procprt_CWRDSK_a(struct tstat *curstat, int avgval, int nsecs)
 	else
 		nett_wsz = 0;
 
-        val2memstr(nett_wsz*512, buf, KBFORMAT, 0, 0);
+        val2memstr(nett_wsz*512, buf, KBFORMAT, avgval, nsecs);
 
         return buf;
 }
@@ -1467,7 +1472,7 @@ char *
 procprt_WCANCEL_a(struct tstat *curstat, int avgval, int nsecs)
 {
         static char buf[10];
-        val2memstr(curstat->dsk.cwsz*512, buf, KBFORMAT, 0, 0);
+        val2memstr(curstat->dsk.cwsz*512, buf, KBFORMAT, avgval, nsecs);
 
         return buf;
 }

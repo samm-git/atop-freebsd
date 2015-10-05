@@ -117,10 +117,6 @@ static const char rcsid[] = "$Id: various.c,v 1.21 2010/11/12 06:16:16 gerlof Ex
 #include "atop.h"
 #include "acctproc.h"
 
-#ifdef FREEBSD
-    #include <kvm.h>
-    extern  kvm_t *kd;
-#endif
 /*
 ** Function convtime() converts a value (number of seconds since
 ** 1-1-1970) to an ascii-string in the format hh:mm:ss, stored in
@@ -207,9 +203,9 @@ daysecs(time_t itime)
 
 
 /*
-** Function val2valstr() converts a value to an ascii-string of a fixed
-** number of positions; if the value does not fit, it will be formatted to
-** exponent-notation (as short as possible, so not via the standard printf-
+** Function val2valstr() converts a positive value to an ascii-string of a 
+** fixed number of positions; if the value does not fit, it will be formatted
+** to exponent-notation (as short as possible, so not via the standard printf-
 ** formatters %f or %e). The offered string should have a length of width+1.
 ** The value might even be printed as an average for the interval-time.
 */
@@ -220,11 +216,17 @@ val2valstr(count_t value, char *strvalue, int width, int avg, int nsecs)
 	int	exp     = 0;
 	char	*suffix = "";
 
-	if (avg)
+	if (avg && nsecs)
 	{
 		value  = (value + (nsecs/2)) / nsecs;     /* rounded value */
 		width  = width - 2;	/* subtract two positions for '/s' */
 		suffix = "/s";
+	}
+
+	if (value < 0)		// no negative value expected
+	{
+		sprintf(strvalue, "%*s%s", width, "?", suffix);
+		return strvalue;
 	}
 
 	maxval = pow(10.0, width) - 1;
@@ -282,34 +284,24 @@ val2valstr(count_t value, char *strvalue, int width, int avg, int nsecs)
 int
 val2elapstr(int value, char *strvalue)
 {
-        char	*p=strvalue, doshow=0;
+        char	*p=strvalue;
 
-        if (value > DAYSECS) 
+        if (value >= DAYSECS) 
         {
                 p+=sprintf(p, "%dd", value/DAYSECS);
-                value %= DAYSECS;
-		doshow = 1;
         }
 
-        if (value > HOURSECS || doshow) 
+        if (value >= HOURSECS) 
         {
-                p+=sprintf(p, "%dh", value/HOURSECS);
-                value %= HOURSECS;
-		doshow = 1;
+                p+=sprintf(p, "%dh", (value%DAYSECS)/HOURSECS);
         }
 
-        if (value > MINSECS || doshow) 
+        if (value >= MINSECS) 
         {
-                p+=sprintf(p, "%dm", value/MINSECS);
-                value %= MINSECS;
-		doshow = 1;
+                p+=sprintf(p, "%dm", (value%HOURSECS)/MINSECS);
         }
 
-        if (value || doshow) 
-        {
-                p+=sprintf(p, "%ds", value);
-		doshow = 1;
-        }
+        p+=sprintf(p, "%ds", (value%MINSECS));
 
         return p-strvalue;
 }
@@ -409,11 +401,13 @@ val2Hzstr(count_t value, char *strvalue)
 #define	ONEMBYTE	1048576
 #define	ONEGBYTE	1073741824L
 #define	ONETBYTE	1099511627776LL
+#define	ONEPBYTE	1125899906842624LL
 
 #define	MAXBYTE		1024
 #define	MAXKBYTE	ONEKBYTE*99999L
 #define	MAXMBYTE	ONEMBYTE*999L
 #define	MAXGBYTE	ONEGBYTE*999LL
+#define	MAXTBYTE	ONETBYTE*999LL
 
 char *
 val2memstr(count_t value, char *strvalue, int pformat, int avgval, int nsecs)
@@ -437,10 +431,10 @@ val2memstr(count_t value, char *strvalue, int pformat, int avgval, int nsecs)
 	/*
 	** verify if printed value is required per second (average) or total
 	*/
-	if (avgval)
+	if (avgval && nsecs)
 	{
 		value     /= nsecs;
-		verifyval *= 100;
+		verifyval  = verifyval * 100 /nsecs;
 		basewidth -= 2;
 		suffix     = "/s";
 	}
@@ -457,10 +451,13 @@ val2memstr(count_t value, char *strvalue, int pformat, int avgval, int nsecs)
 			if (verifyval <= MAXMBYTE)	/* mbytes ? */
 				aformat = MBFORMAT;
 			else
-				if (verifyval <= MAXGBYTE)	/* mbytes ? */
+				if (verifyval <= MAXGBYTE)	/* gbytes ? */
 					aformat = GBFORMAT;
 				else
-					aformat = TBFORMAT;
+				 	if (verifyval <= MAXTBYTE)/* tbytes? */
+						aformat = TBFORMAT;/* tbytes! */
+					else
+						aformat = PBFORMAT;/* pbytes! */
 
 	/*
 	** check if this is also the preferred format
@@ -493,6 +490,11 @@ val2memstr(count_t value, char *strvalue, int pformat, int avgval, int nsecs)
 	   case	TBFORMAT:
 		sprintf(strvalue, "%*.1lfT%s",
 			basewidth-1, (double)((double)value/ONETBYTE), suffix);
+		break;
+
+	   case	PBFORMAT:
+		sprintf(strvalue, "%*.1lfP%s",
+			basewidth-1, (double)((double)value/ONEPBYTE), suffix);
 		break;
 
 	   default:
@@ -531,13 +533,10 @@ getboot(void)
 {
 	static unsigned long long	boottime;
 	unsigned long long		getbootlinux(long);
-	unsigned long long		getbootbsd(long);
+
 	if (!boottime)		/* do this only once */
-#ifdef linux
 		boottime = getbootlinux(hertz);
-#elif defined(FREEBSD)
-		boottime = getbootbsd(hertz);
-#endif
+
 	return boottime;
 }
 
@@ -559,7 +558,7 @@ ptrverify(const void *ptr, const char *errormsg, ...)
 		if (vis.show_end)
 			(vis.show_end)();
 
-        	va_list args = {0};
+        	va_list args;
 		fprintf(stderr, errormsg, args);
         	va_end  (args);
 
@@ -576,10 +575,6 @@ cleanstop(exitcode)
 	acctswoff();
 	netatop_signoff();
 	(vis.show_end)();
-#ifdef FREEBSD
-	if(kd)
-	    kvm_close(kd);
-#endif
 	exit(exitcode);
 }
 

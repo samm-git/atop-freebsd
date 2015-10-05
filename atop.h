@@ -33,6 +33,7 @@
 #define	MBFORMAT	2
 #define	GBFORMAT	3
 #define	TBFORMAT	4
+#define	PBFORMAT	5
 #define	OVFORMAT	9
 
 typedef	long long	count_t;
@@ -74,6 +75,7 @@ extern char      	acctreason;
 extern char		deviatonly;
 extern char		usecolors;
 extern char		threadview;
+extern char		calcpss;
 extern char		rawname[];
 extern char		rawreadflag;
 extern unsigned int	begintime, endtime;
@@ -141,6 +143,8 @@ int		compnam(const void *, const void *);
 int		cpucompar (const void *, const void *);
 int		diskcompar(const void *, const void *);
 int		intfcompar(const void *, const void *);
+int		nfsmcompar(const void *, const void *);
+int		contcompar(const void *, const void *);
 
 count_t		subcount(count_t, count_t);
 void  		rawread(void);

@@ -1,23 +1,23 @@
-.TH ATOPSAR 1 "October 2012" "Linux"
+.TH ATOPSAR 1 "April 2015" "Linux"
 .SH NAME
 .B atopsar
 - Advanced System Activity Report (atop related)
 .SH SYNOPSIS
 .P
 .B atopsar
-[-flags...]
-[-r
+[\-flags...]
+[\-r
 .I file|date
-] [-R
+] [\-R
 .I cnt
-] [-b
+] [\-b
 .I hh:mm
-] [-e
+] [\-e
 .I hh:mm
 ]
 .br
 .B atopsar
-[-flags...]
+[\-flags...]
 .I interval
 [
 .I samples
@@ -155,7 +155,7 @@ on the number of lines); for output to a file or pipe this value is 23.
 Summarize
 .I cnt
 samples into one sample. When the logfile contains e.g. samples of 10 minutes,
-the use of the flag '-R 6' shows a report with one sample for every hour.
+the use of the flag '\-R 6' shows a report with one sample for every hour.
 .PP
 Other flags are used to define which reports are required:
 .PP
@@ -195,6 +195,18 @@ Report about utilization of multiple devices.
 .TP 5
 .B -d
 Report about utilization of disks.
+.PP
+.TP 5
+.B -n
+Report about NFS mounted filesystems on NFS client.
+.PP
+.TP 5
+.B -j
+Report about NFS client activity.
+.PP
+.TP 5
+.B -J
+Report about NFS server activity.
 .PP
 .TP 5
 .B -i
@@ -255,18 +267,26 @@ Report about errors for TCP-traffic.
 .TP 5
 .B -O
 Report about top-3 processes consuming most processor capacity.
+This report is only available when using a log file (not when specifying
+an interval).
 .PP
 .TP 5
 .B -G
 Report about top-3 processes consuming most resident memory.
+This report is only available when using a log file (not when specifying
+an interval).
 .PP
 .TP 5
 .B -D
 Report about top-3 processes issueing most disk transfers.
+This report is only available when using a log file (not when specifying
+an interval).
 .PP
 .TP 5
 .B -N
 Report about top-3 processes issueing most IPv4/IPv6 socket transfers.
+This report is only available when using a log file (not when specifying
+an interval).
 .SH OUTPUT DESCRIPTION
 Depending on the requested report, a number of columns with
 output values are produced.
@@ -305,7 +325,7 @@ running on the same hardware.
 .TP 12
 .B guest%
 Percentage of cpu time used by other virtual machines
-running on the same hardware.
+running on the same hardware (overlaps with usr%/nice%).
 .TP 12
 .B wait%
 Percentage of unused cpu time while
@@ -463,6 +483,68 @@ Average number of milliseconds needed by a request on this unit
 (seek, latency and data-transfer).
 .PP
 The output for the flag
+.B -n
+contains information about activity on NFS mounted filesystems (client):
+.TP 12
+.B mounted_device
+Mounted device containing server name and server directory being mounted.
+.TP 12
+.B physread/s
+Kilobytes data physically read from the NFS server by processes running
+on the NFS client.
+.TP 12
+.B KBwrite/s
+Kilobytes data physically written to the NFS server by processes running
+on the NFS client.
+.br
+When the NFS filesystem was mounted during the interval, the state 'M' is
+shown.
+.PP
+The output for the flag
+.B -j
+contains information about NFS client activity:
+.TP 12
+.B rpc/s
+Number of RPC calls per second issued to NFS server(s).
+.TP 12
+.B rpcread/s
+Number of read RPC calls per second issued to NFS server(s).
+.TP 12
+.B rpcwrite/s
+Number of write RPC calls per second issued to NFS server(s).
+.TP 12
+.B retrans/s
+Number of retransmitted RPC calls per second.
+.TP 12
+.B autrefresh/s
+Number of authorization refreshes per second.
+.PP
+The output for the flag
+.B -J
+contains information about NFS server activity:
+.TP 12
+.B rpc/s
+Number of RPC calls per second received from NFS client(s).
+.TP 12
+.B rpcread/s
+Number of read RPC calls per second received from NFS client(s).
+.TP 12
+.B rpcwrite/s
+Number of write RPC calls per second received from NFS client(s).
+.TP 12
+.B MBcr/s
+Number of Megabytes per second returned to read requests by clients.
+.TP 12
+.B MBcw/s
+Number of Megabytes per second passed in write requests by clients.
+.TP 12
+.B nettcp/s
+Number of requests per second handled via TCP.
+.TP 12
+.B netudp/s
+Number of requests per second handled via UDP.
+.PP
+The output for the flag
 .B -i
 provides information about utilization of network interfaces:
 .TP 12
@@ -553,7 +635,7 @@ Number of IP datagrams that local higher-layer protocols
 supplied to IP in requests for transmission per second (ipOutRequests).
 .TP 12
 .B indeliver/s
-Number of received IP datagrams that have been succesfully delivered to
+Number of received IP datagrams that have been successfully delivered to
 higher protocol-layers per second (ipInDelivers).
 .TP 12
 .B forward/s
@@ -562,7 +644,7 @@ their final IP destination, as a result of which an attempt was made to
 forward (ipForwDatagrams).
 .TP 12
 .B reasmok/s
-Number of IP datagrams succesfully reassembled per second (ipReasmOKs).
+Number of IP datagrams successfully reassembled per second (ipReasmOKs).
 .TP 12
 .B fragcreat/s
 Number of IP datagram fragments generated per second at this entity
@@ -727,11 +809,11 @@ Number of multicast packets per second that have been transmitted to the
 interface (ipv6IfStatsOutMcastPkts).
 .TP 12
 .B indeliv/s
-Number of IP datagrams succesfully delivered per second to
+Number of IP datagrams successfully delivered per second to
 IPv6 user-protocols, including ICMP (ipv6IfStatsInDelivers).
 .TP 12
 .B reasmok/s
-Number of IPv6 datagrams succesfully reassembled per second
+Number of IPv6 datagrams successfully reassembled per second
 (ipv6IfStatsReasmOKs).
 .TP 12
 .B fragcre/s
@@ -1059,9 +1141,10 @@ Daily data file, where
 are digits representing the date.
 .SH SEE ALSO
 .B atop(1),
+.B atoprc(5),
+.B atopacctd(8),
 .B netatop(4),
-.B netatopd(8),
-.B atoprc(5)
+.B netatopd(8)
 .br
 .B http://www.atoptool.nl
 .SH AUTHOR

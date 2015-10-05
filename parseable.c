@@ -91,6 +91,9 @@ void 	print_PAG();
 void 	print_LVM();
 void 	print_MDD();
 void 	print_DSK();
+void 	print_NFM();
+void 	print_NFC();
+void 	print_NFS();
 void 	print_NET();
 
 void 	print_PRG();
@@ -119,6 +122,9 @@ static struct labeldef	labeldef[] = {
 	{ "LVM",	0,	print_LVM },
 	{ "MDD",	0,	print_MDD },
 	{ "DSK",	0,	print_DSK },
+	{ "NFM",	0,	print_NFM },
+	{ "NFC",	0,	print_NFC },
+	{ "NFS",	0,	print_NFS },
 	{ "NET",	0,	print_NET },
 
 	{ "PRG",	0,	print_PRG },
@@ -238,7 +244,7 @@ parseout(time_t curtime, int numsecs,
 			snprintf(header, sizeof header, "%s %s %ld %s %s %d",
 				labeldef[i].label,
 				utsname.nodename,
-				(long int)curtime,
+				curtime,
 				datestr, timestr, numsecs);
 
 			/*
@@ -259,12 +265,12 @@ parseout(time_t curtime, int numsecs,
 /*
 ** print functions for system-level statistics
 */
-void 
+void
 calc_freqscale(count_t maxfreq, count_t cnt, count_t ticks, 
-               count_t *freq, int* freqperc)
+               count_t *freq, int *freqperc)
 {
         // if ticks != 0, do full calcs
-        if (ticks) 
+        if (maxfreq && ticks) 
         {
             *freq=cnt/ticks;
             *freqperc=100* *freq / maxfreq;
@@ -375,7 +381,7 @@ print_CPL(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 void
 print_MEM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 {
-	printf(	"%s %u %lld %lld %lld %lld %lld %lld %lld\n",
+	printf(	"%s %u %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld\n",
 			hp,
 			pagesize,
 			ss->mem.physmem,
@@ -384,7 +390,14 @@ print_MEM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 			ss->mem.buffermem,
 			ss->mem.slabmem,
 			ss->mem.cachedrt,
-			ss->mem.slabreclaim);
+			ss->mem.slabreclaim,
+        		ss->mem.vmwballoon,
+        		ss->mem.shmem,
+        		ss->mem.shmrss,
+        		ss->mem.shmswp,
+        		ss->mem.hugepagesz,
+        		ss->mem.tothugepage,
+        		ss->mem.freehugepage);
 }
 
 void
@@ -468,6 +481,62 @@ print_DSK(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 }
 
 void
+print_NFM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+{
+	register int	i;
+
+        for (i=0; i < ss->nfs.nfsmounts.nrmounts; i++)
+	{
+		printf("%s %s %lld %lld %lld %lld %lld %lld %lld %lld\n",
+			hp,
+			ss->nfs.nfsmounts.nfsmnt[i].mountdev,
+			ss->nfs.nfsmounts.nfsmnt[i].bytestotread,
+			ss->nfs.nfsmounts.nfsmnt[i].bytestotread,
+			ss->nfs.nfsmounts.nfsmnt[i].bytesread,
+			ss->nfs.nfsmounts.nfsmnt[i].byteswrite,
+			ss->nfs.nfsmounts.nfsmnt[i].bytesdread,
+			ss->nfs.nfsmounts.nfsmnt[i].bytesdwrite,
+			ss->nfs.nfsmounts.nfsmnt[i].pagesmread,
+			ss->nfs.nfsmounts.nfsmnt[i].pagesmwrite);
+	}
+}
+
+void
+print_NFC(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+{
+	printf(	"%s %lld %lld %lld %lld %lld\n",
+			hp,
+			ss->nfs.client.rpccnt,
+			ss->nfs.client.rpcread,
+			ss->nfs.client.rpcwrite,
+			ss->nfs.client.rpcretrans,
+			ss->nfs.client.rpcautrefresh);
+}
+
+void
+print_NFS(char *hp, struct sstat *ss, struct tstat *ps, int nact)
+{
+	printf(	"%s %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld "
+	        "%lld %lld %lld %lld %lld\n",
+			hp,
+			ss->nfs.server.rpccnt,
+			ss->nfs.client.rpcread,
+			ss->nfs.client.rpcwrite,
+			ss->nfs.server.nrbytes,
+			ss->nfs.server.nwbytes,
+			ss->nfs.server.rpcbadfmt,
+			ss->nfs.server.rpcbadaut,
+			ss->nfs.server.rpcbadcln,
+			ss->nfs.server.netcnt,
+			ss->nfs.server.nettcpcnt,
+			ss->nfs.server.netudpcnt,
+			ss->nfs.server.nettcpcon,
+			ss->nfs.server.rchits,
+			ss->nfs.server.rcmiss,
+			ss->nfs.server.rcnoca);
+}
+
+void
 print_NET(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 {
 	register int 	i;
@@ -515,7 +584,7 @@ print_PRG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 	for (i=0; i < nact; i++, ps++)
 	{
 		printf("%s %d (%s) %c %d %d %d %d %d %ld (%s) %d %d %d %d "
- 		       "%d %d %d %d %d %d %ld %c\n",
+ 		       "%d %d %d %d %d %d %ld %c %d %d\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
@@ -525,7 +594,7 @@ print_PRG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->gen.tgid,
 				ps->gen.nthr,
 				ps->gen.excode,
-				(long int)ps->gen.btime,
+				ps->gen.btime,
 				ps->gen.cmdline,
 				ps->gen.ppid,
 				ps->gen.nthrrun,
@@ -537,8 +606,10 @@ print_PRG(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->gen.sgid,
 				ps->gen.fsuid,
 				ps->gen.fsgid,
-				(long int)ps->gen.elaps,
-				ps->gen.isproc ? 'y':'n');
+				ps->gen.elaps,
+				ps->gen.isproc ? 'y':'n',
+				ps->gen.vpid,
+				ps->gen.ctid);
 	}
 }
 
@@ -576,7 +647,7 @@ print_PRM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 	for (i=0; i < nact; i++, ps++)
 	{
 		printf("%s %d (%s) %c %u %lld %lld %lld %lld %lld %lld "
-		       "%lld %lld %lld %lld %lld %d %c\n",
+		       "%lld %lld %lld %lld %lld %d %c %lld\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,
@@ -594,7 +665,9 @@ print_PRM(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 				ps->mem.vstack,
 				ps->mem.vswap,
 				ps->gen.tgid,
-				ps->gen.isproc ? 'y':'n');
+				ps->gen.isproc ? 'y':'n',
+				ps->mem.pmem == (unsigned long long)-1LL ?
+								0:ps->mem.pmem);
 	}
 }
 
@@ -605,7 +678,7 @@ print_PRD(char *hp, struct sstat *ss, struct tstat *ps, int nact)
 
 	for (i=0; i < nact; i++, ps++)
 	{
-		printf("%s %d (%s) %c %c %c %lld %lld %lld %lld %lld %dn %c\n",
+		printf("%s %d (%s) %c %c %c %lld %lld %lld %lld %lld %d n %c\n",
 				hp,
 				ps->gen.pid,
 				ps->gen.name,

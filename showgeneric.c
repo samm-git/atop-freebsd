@@ -268,9 +268,7 @@ static const char rcsid[] = "$Id: showgeneric.c,v 1.71 2010/10/25 19:08:32 gerlo
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
-#ifdef linux
- #include <termio.h>
-#endif
+#include <termio.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -284,7 +282,8 @@ static const char rcsid[] = "$Id: showgeneric.c,v 1.71 2010/10/25 19:08:32 gerlo
 #include "showgeneric.h"
 #include "showlinux.h"
 
-static struct pselection procsel = {"", {USERSTUB, }, "", 0, { 0, }};
+static struct pselection procsel = {"", {USERSTUB, }, {0,},
+                                    "", 0, { 0, },  "", 0, { 0, } };
 static struct sselection syssel;
 
 static void	showhelp(int);
@@ -292,6 +291,7 @@ static int	paused;     	/* boolean: currently in pause-mode     */
 static int	fixedhead;	/* boolean: fixate header-lines         */
 static int	sysnosort;	/* boolean: suppress sort of resources  */
 static int	avgval;		/* boolean: average values i.s.o. total */
+static int	supexits;	/* boolean: suppress exited processes   */
 
 static char	showtype  = MPROCGEN;
 static char	showorder = MSORTCPU;
@@ -301,6 +301,13 @@ static int	maxdsklines = 999;  /* maximum disk      lines          */
 static int	maxmddlines = 999;  /* maximum MDD       lines          */
 static int	maxlvmlines = 999;  /* maximum LVM       lines          */
 static int	maxintlines = 999;  /* maximum interface lines          */
+static int	maxnfslines = 999;  /* maximum nfs mount lines          */
+static int	maxcontlines = 999; /* maximum container lines          */
+
+static short	colorinfo   = COLOR_GREEN;
+static short	coloralmost = COLOR_CYAN;
+static short	colorcrit   = COLOR_RED;
+static short	colorthread = COLOR_YELLOW;
 
 static int	cumusers(struct tstat **, struct tstat *, int);
 static int	cumprocs(struct tstat **, struct tstat *, int);
@@ -340,7 +347,7 @@ generic_samp(time_t curtime, int nsecs,
 	int		firstproc = 0, plistsz, alistsz, killpid, killsig;
 	int		lastchar;
 	char		format1[16], format2[16], hhmm[16];
-	char		*statmsg = NULL, statbuf[80];
+	char		*statmsg = NULL, statbuf[80], genline[80];
 	char		 *lastsortp, curorder, autoorder;
 	char		buf[33];
 	struct passwd 	*pwd;
@@ -388,7 +395,7 @@ generic_samp(time_t curtime, int nsecs,
 	/*
 	** sellist contains the pointers to the structs in tstat
 	** that are currently selected on basis of a particular
-	** username or program name (both regexp's)
+	** username, program name (both regexp's) or suppressed exited procs
 	**
 	** this list will be allocated 'lazy'
 	*/
@@ -440,6 +447,16 @@ generic_samp(time_t curtime, int nsecs,
 		if (sstat->intf.nrintf > 1 && maxintlines > 0)
 			qsort(sstat->intf.intf, sstat->intf.nrintf,
 		  	       sizeof sstat->intf.intf[0], intfcompar);
+
+		if (sstat->nfs.nfsmounts.nrmounts > 1 && maxnfslines > 0)
+			qsort(sstat->nfs.nfsmounts.nfsmnt,
+		              sstat->nfs.nfsmounts.nrmounts,
+		  	      sizeof sstat->nfs.nfsmounts.nfsmnt[0],
+				nfsmcompar);
+
+		if (sstat->cfs.nrcontainer > 1 && maxcontlines > 0)
+			qsort(sstat->cfs.cont, sstat->cfs.nrcontainer,
+		  	       sizeof sstat->cfs.cont[0], contcompar);
 	}
 
 	/*
@@ -470,24 +487,28 @@ generic_samp(time_t curtime, int nsecs,
 
                 int seclen	= val2elapstr(nsecs, buf);
                 int lenavail 	= (screen ? COLS : linelen) -
-						44 - seclen - utsnodenamelen;
+						48 - seclen - utsnodenamelen;
                 int len1	= lenavail / 3;
                 int len2	= lenavail - len1 - len1; 
 
-		printg("ATOP - %s%*s%s  %s%*s%c%c%c%c%c%c%c%c%c%*s%s elapsed", 
+		printg("ATOP - %s%*s%s  %s%*s%c%c%c%c%c%c%c%c%c%c%c%c%c%*s%s elapsed", 
 			utsname.nodename, len1, "", 
 			format1, format2, len1, "",
-			threadview                      ? 'y' : '-',
-			fixedhead  			? 'f' : '-',
-			sysnosort  			? 'F' : '-',
-			deviatonly 			? '-' : 'a',
-			usecolors  			? '-' : 'x',
-			avgval     			? '1' : '-',
-			procsel.userid[0] != USERSTUB	? 'U' : '-',
-			procsel.prognamesz		? 'P' : '-',
+			threadview                    ? MTHREAD    : '-',
+			fixedhead  		      ? MSYSFIXED  : '-',
+			sysnosort  		      ? MSYSNOSORT : '-',
+			deviatonly 		      ? '-'        : MALLPROC,
+			usecolors  		      ? '-'        : MCOLORS,
+			avgval     		      ? MAVGVAL    : '-',
+			calcpss     		      ? MCALCPSS   : '-',
+			supexits     		      ? MSUPEXITS  : '-',
+			procsel.userid[0] != USERSTUB ? MSELUSER   : '-',
+			procsel.prognamesz	      ? MSELPROC   : '-',
+			procsel.pid[0] != 0	      ? MSELPID    : '-',
+			procsel.argnamesz	      ? MSELARG    : '-',
 			syssel.lvmnamesz +
 			syssel.dsknamesz +
-			syssel.itfnamesz		? 'S' : '-',
+			syssel.itfnamesz	      ? MSELSYS    : '-',
 			len2, "", buf);
 
 		if (screen)
@@ -505,7 +526,7 @@ generic_samp(time_t curtime, int nsecs,
 		if (noverflow)
 		{
 			snprintf(statbuf, sizeof statbuf, 
-			         "Only %d exited processes in handled "
+			         "Only %d exited processes handled "
 			         "-- %u skipped!", nexit, noverflow);
 			statmsg = statbuf;
 		}
@@ -523,7 +544,8 @@ generic_samp(time_t curtime, int nsecs,
 		curline = prisyst(sstat, curline, nsecs, avgval,
 		                  fixedhead, &syssel, &autoorder,
 		                  maxcpulines, maxdsklines, maxmddlines,
-		                  maxlvmlines, maxintlines);
+		                  maxlvmlines, maxintlines, maxnfslines,
+		                  maxcontlines);
 
 		/*
  		** if system-wide statistics do not fit,
@@ -543,7 +565,8 @@ generic_samp(time_t curtime, int nsecs,
 			curline = prisyst(sstat, curline, nsecs, avgval,
 					fixedhead,  &syssel, &autoorder,
 					maxcpulines, maxdsklines, maxmddlines,
-					maxlvmlines, maxintlines);
+		                        maxlvmlines, maxintlines, maxnfslines,
+		                        maxcontlines);
 
 			/*
  			** if system-wide statistics still do not fit,
@@ -578,7 +601,7 @@ generic_samp(time_t curtime, int nsecs,
 			{
 				clrtoeol();
 				if (usecolors)
-					attron(COLOR_PAIR(COLORLOW));
+					attron(COLOR_PAIR(COLORINFO));
 			}
 
 			printg(statmsg);
@@ -586,7 +609,7 @@ generic_samp(time_t curtime, int nsecs,
 			if (screen)
 			{
 				if (usecolors)
-					attroff(COLOR_PAIR(COLORLOW));
+					attroff(COLOR_PAIR(COLORINFO));
 			}
 
 			statmsg = NULL;
@@ -598,7 +621,7 @@ generic_samp(time_t curtime, int nsecs,
 				if (screen)
 				{
 					if (usecolors)
-						attron(COLOR_PAIR(COLORLOW));
+						attron(COLOR_PAIR(COLORINFO));
 
 					attron(A_BLINK);
 
@@ -615,7 +638,7 @@ generic_samp(time_t curtime, int nsecs,
 				if (screen)
 				{
 					if (usecolors)
-						attroff(COLOR_PAIR(COLORLOW));
+						attroff(COLOR_PAIR(COLORINFO));
 					attroff(A_BLINK);
 				}
 			}
@@ -632,12 +655,11 @@ generic_samp(time_t curtime, int nsecs,
 		   case MCUMUSER:
 			threadallowed = 0;
 
-			if (ucumlist)	/* list already available? */
+			if (ucumlist)	/* previous list still available? */
 			{
-				curlist   = ucumlist;
-				nlist     = nucum;
-				lastsortp = &ulastorder;
-				break;
+                                free(ucumlist);
+                                free(tucumlist);
+				ulastorder = 0;
 			}
 
 			/*
@@ -666,12 +688,11 @@ generic_samp(time_t curtime, int nsecs,
 		   case MCUMPROC:
 			threadallowed = 0;
 
-			if (pcumlist)	/* list already available? */
+			if (pcumlist)	/* previous list still available? */
 			{
-				curlist   = pcumlist;
-				nlist     = npcum;
-				lastsortp = &plastorder;
-				break;
+                                free(pcumlist);
+                                free(tpcumlist);
+				plastorder = 0;
 			}
 
 			/*
@@ -699,7 +720,11 @@ generic_samp(time_t curtime, int nsecs,
 		   default:
 			threadallowed = 1;
 
-			if (procsel.userid[0] ==USERSTUB && !procsel.prognamesz)
+			if ( procsel.userid[0] == USERSTUB &&
+			    !procsel.prognamesz            &&
+			    !procsel.argnamesz             &&
+			    !procsel.pid[0]                &&
+			    !supexits                        )
 			{	/* no selection wanted */
 				curlist   = proclist;
 				nlist     = nactproc;
@@ -724,6 +749,9 @@ generic_samp(time_t curtime, int nsecs,
 			for (i=nsel=0; i < nactproc; i++)
 			{
 				if (procsuppress(*(proclist+i), &procsel))
+					continue;
+
+				if ((proclist[i])->gen.state == 'E' && supexits)
 					continue;
 
 				sellist[nsel++] = proclist[i]; 
@@ -800,9 +828,9 @@ generic_samp(time_t curtime, int nsecs,
 
 						for (t = curlist[i] - tstat+1;
 					     	     t < ndeviat &&
-					     	     (curlist[i])->gen.tgid &&
+						     (curlist[i])->gen.tgid &&
 					             (tstat+t)->gen.tgid ==
-					               (curlist[i])->gen.tgid;
+					                (curlist[i])->gen.tgid;
 						     t++)
 						{
 							tsklist[j++] = tstat+t;
@@ -1084,15 +1112,9 @@ generic_samp(time_t curtime, int nsecs,
 			   case MPROCNET:
 				if ( !(supportflags & NETATOP) )
 				{
-#ifdef linux
 					statmsg = "Kernel module 'netatop' not "
 					          "active or no root privs; "
 					          "request ignored!";
-#elif defined(FREEBSD)
-					statmsg = "FreeBSD have no support for per-process network stat ; "
-					          "request ignored!";
-#endif
-
 					break;
 				}
 
@@ -1304,7 +1326,6 @@ generic_samp(time_t curtime, int nsecs,
 					}
 					else
 					{
-						setpwent();
 						while ( (pwd = getpwent()))
 						{
 							if (regexec(&userregex,
@@ -1369,7 +1390,7 @@ generic_samp(time_t curtime, int nsecs,
 				move(statline, 0);
 				clrtoeol();
 				printw("Process-name as regular "
-				       "expression (enter=no specific name): ");
+				       "expression (enter=no regex): ");
 
 				procsel.prognamesz  = 0;
 				procsel.progname[0] = '\0';
@@ -1388,6 +1409,107 @@ generic_samp(time_t curtime, int nsecs,
 
 						procsel.prognamesz  = 0;
 						procsel.progname[0] = '\0';
+					}
+				}
+
+				noecho();
+
+				move(statline, 0);
+
+				if (interval && !paused && !rawreadflag)
+					alarm(3);  /* set short timer */
+
+				firstproc = 0;
+				break;
+
+			   /*
+			   ** focus on specific PIDs
+			   */
+			   case MSELPID:
+				alarm(0);	/* stop the clock */
+				echo();
+
+				move(statline, 0);
+				clrtoeol();
+				printw("Comma-separated PIDs of processes "
+				                 "(enter=no selection): ");
+
+				scanw("%79s\n", genline);
+
+				int  id = 0;
+
+				char *pidp = strtok(genline, ",");
+
+				while (pidp)
+				{
+					char *ep;
+
+					if (id >= MAXPID-1)
+					{
+						procsel.pid[id] = 0;	// stub
+
+						statmsg = "Maximum number of"
+						          "PIDs reached!";
+						beep();
+						break;
+					}
+
+					procsel.pid[id] = strtol(pidp, &ep, 10);
+
+					if (*ep)
+					{
+						statmsg = "Non-numerical PID!";
+						beep();
+						procsel.pid[0]  = 0;  // stub
+						break;
+					}
+
+					id++;
+					pidp = strtok(NULL, ",");
+				}
+
+				procsel.pid[id] = 0;	// stub
+
+				noecho();
+
+				move(statline, 0);
+
+				if (interval && !paused && !rawreadflag)
+					alarm(3);  /* set short timer */
+
+				firstproc = 0;
+				break;
+
+
+			   /*
+			   ** focus on specific command line arguments
+			   */
+			   case MSELARG:
+				alarm(0);	/* stop the clock */
+				echo();
+
+				move(statline, 0);
+				clrtoeol();
+				printw("Command line string as regular "
+				       "expression (enter=no regex): ");
+
+				procsel.argnamesz  = 0;
+				procsel.argname[0] = '\0';
+
+				scanw("%63s\n", procsel.argname);
+				procsel.argnamesz = strlen(procsel.argname);
+
+				if (procsel.argnamesz)
+				{
+					if (regcomp(&procsel.argregex,
+					         procsel.argname, REG_NOSUB))
+					{
+						statmsg = "Invalid regular "
+						          "expression!";
+						beep();
+
+						procsel.argnamesz  = 0;
+						procsel.argname[0] = '\0';
 					}
 				}
 
@@ -1618,6 +1740,42 @@ generic_samp(time_t curtime, int nsecs,
 				break;
 
 			   /*
+			   ** per-process PSS calculation wanted 
+			   */
+			   case MCALCPSS:
+				if (calcpss)
+				{
+					calcpss    = 0;
+					statmsg    = "PSIZE gathering disabled";
+				}
+				else
+				{
+					calcpss    = 1;
+					statmsg    = "PSIZE gathering enabled";
+				}
+				break;
+
+			   /*
+			   ** suppression of exited processes in output
+			   */
+			   case MSUPEXITS:
+				if (supexits)
+				{
+					supexits    = 0;
+					statmsg    = "Exited processes will "
+					             "be shown/accumulated";
+					firstproc  = 0;
+				}
+				else
+				{
+					supexits    = 1;
+					statmsg    = "Exited processes will "
+					             "not be shown/accumulated";
+					firstproc  = 0;
+				}
+				break;
+
+			   /*
 			   ** screen lines:
 			   **	         toggle for colors
 			   */
@@ -1681,6 +1839,16 @@ generic_samp(time_t curtime, int nsecs,
 				  getnumval("Maximum lines for interface "
 				            "statistics (now %d): ",
 					    maxintlines, statline);
+
+				maxnfslines =
+				  getnumval("Maximum lines for NFS mount "
+				            "statistics (now %d): ",
+					    maxnfslines, statline);
+
+				maxcontlines =
+				  getnumval("Maximum lines for container "
+				            "statistics (now %d): ",
+					    maxcontlines, statline);
 
 				if (interval && !paused && !rawreadflag)
 					alarm(3);  /* set short timer */
@@ -1774,7 +1942,11 @@ generic_samp(time_t curtime, int nsecs,
 			   ** handle screen resize
 			   */
 			   case KEY_RESIZE:
-				statmsg = "Window has been resized...";
+				snprintf(statbuf, sizeof statbuf, 
+					"Window resized to %dx%d...",
+			         		COLS, LINES);
+				statmsg = statbuf;
+
 				timeout(0);
 				(void) getch();
 				timeout(-1);
@@ -1823,6 +1995,9 @@ cumusers(struct tstat **curprocs, struct tstat *curusers, int numprocs)
 		if (procsuppress(*curprocs, &procsel))
 			continue;
 
+		if ((*curprocs)->gen.state == 'E' && supexits)
+			continue;
+ 
 		if ( curusers->gen.ruid != (*curprocs)->gen.ruid )
 		{
 			if (curusers->gen.pid)
@@ -1863,8 +2038,9 @@ cumusers(struct tstat **curprocs, struct tstat *curusers, int numprocs)
 
 		if ((*curprocs)->gen.state != 'E')
 		{
-			curusers->mem.rmem   += (*curprocs)->mem.rmem;
 			curusers->mem.vmem   += (*curprocs)->mem.vmem;
+			curusers->mem.rmem   += (*curprocs)->mem.rmem;
+			curusers->mem.pmem   += (*curprocs)->mem.pmem;
 			curusers->mem.vlibs  += (*curprocs)->mem.vlibs;
 			curusers->mem.vdata  += (*curprocs)->mem.vdata;
 			curusers->mem.vstack += (*curprocs)->mem.vstack;
@@ -1901,6 +2077,9 @@ cumprocs(struct tstat **curprocs, struct tstat *curprogs, int numprocs)
 	for (numprogs=i=0; i < numprocs; i++, curprocs++)
 	{
 		if (procsuppress(*curprocs, &procsel))
+			continue;
+
+		if ((*curprocs)->gen.state == 'E' && supexits)
 			continue;
 
 		if ( strcmp(curprogs->gen.name, (*curprocs)->gen.name) != 0)
@@ -1943,8 +2122,9 @@ cumprocs(struct tstat **curprocs, struct tstat *curprogs, int numprocs)
 
 		if ((*curprocs)->gen.state != 'E')
 		{
-			curprogs->mem.rmem   += (*curprocs)->mem.rmem;
 			curprogs->mem.vmem   += (*curprocs)->mem.vmem;
+			curprogs->mem.rmem   += (*curprocs)->mem.rmem;
+			curprogs->mem.pmem   += (*curprocs)->mem.pmem;
 			curprogs->mem.vlibs  += (*curprocs)->mem.vlibs;
 			curprogs->mem.vdata  += (*curprocs)->mem.vdata;
 			curprogs->mem.vstack += (*curprocs)->mem.vstack;
@@ -1988,12 +2168,51 @@ procsuppress(struct tstat *curstat, struct pselection *sel)
 	}
 
 	/*
+	** check if only processes with particular PIDs
+	** should be shown
+	*/
+	if (sel->pid[0])
+	{
+		int i = 0;
+
+		while (sel->pid[i])
+		{
+			if (sel->pid[i] == curstat->gen.pid)
+				break;
+			i++;
+		}
+
+		if (sel->pid[i] != curstat->gen.pid)
+			return 1;
+	}
+
+	/*
 	** check if only processes with a particular name
 	** should be shown
 	*/
 	if (sel->prognamesz &&
 	    regexec(&(sel->progregex), curstat->gen.name, 0, NULL, 0))
 		return 1;
+
+	/*
+	** check if only processes with a particular command line string
+	** should be shown
+	*/
+	if (sel->argnamesz)
+	{
+		if (curstat->gen.cmdline[0])
+		{
+			if (regexec(&(sel->argregex), curstat->gen.cmdline,
+								0, NULL, 0))
+				return 1;
+		}
+		else
+		{
+			if (regexec(&(sel->argregex), curstat->gen.name,
+								0, NULL, 0))
+				return 1;
+		}
+	}
 
 	return 0;
 }
@@ -2002,11 +2221,13 @@ procsuppress(struct tstat *curstat, struct pselection *sel)
 static void
 limitedlines(void)
 {
-	maxcpulines = 0;
-	maxdsklines = 3;
-	maxmddlines = 4;
-	maxlvmlines = 5;
-	maxintlines = 3;
+	maxcpulines  = 0;
+	maxdsklines  = 3;
+	maxmddlines  = 3;
+	maxlvmlines  = 4;
+	maxintlines  = 2;
+	maxnfslines  = 2;
+	maxcontlines = 0;
 }
 
 /*
@@ -2082,7 +2303,7 @@ generic_init(void)
 
 	/*
 	** check if default sort order and/or showtype are overruled
-	** by commando-line flags
+	** by command-line flags
 	*/
 	for (i=0; flaglist[i]; i++)
 	{
@@ -2198,6 +2419,20 @@ generic_init(void)
 				threadview = 1;
 			break;
 
+		   case MCALCPSS:
+			if (calcpss)
+				calcpss = 0;
+			else
+				calcpss = 1;
+			break;
+
+		   case MSUPEXITS:
+			if (supexits)
+				supexits = 0;
+			else
+				supexits = 1;
+			break;
+
 		   case MCOLORS:
 			if (usecolors)
 				usecolors=0;
@@ -2258,11 +2493,10 @@ generic_init(void)
 			use_default_colors();
 			start_color();
 
-			init_pair(COLORLOW,  COLOR_GREEN,  -1);
-			init_pair(COLORMED,  COLOR_CYAN,   -1);
-			init_pair(COLORHIGH, COLOR_RED,    -1);
-
-			init_pair(COLORTHR,  COLOR_YELLOW,   -1);
+			init_pair(COLORINFO,   colorinfo,   -1);
+			init_pair(COLORALMOST, coloralmost, -1);
+			init_pair(COLORCRIT,   colorcrit,   -1);
+			init_pair(COLORTHR,    colorthread, -1);
 		}
 		else
 		{
@@ -2304,13 +2538,18 @@ static struct helptext {
 	{"\t'%c'  - total resource consumption per program (i.e. same "
 	 "process name)\n",					MCUMPROC},
 	{"\n",							' '},
-	{"Selections (keys shown in header line):\n",		' '},
-	{"\t'%c'  - focus on specific user name        (regular expression)\n",
-								MSELUSER},
-	{"\t'%c'  - focus on specific process name     (regular expression)\n",
-								MSELPROC},
-	{"\t'%c'  - focus on specific system resources (regular expression)\n",
-								MSELSYS},
+	{"Process selections (keys shown in header line):\n",	' '},
+	{"\t'%c'  - focus on specific user name           "
+	                              "(regular expression)\n", MSELUSER},
+	{"\t'%c'  - focus on specific process name        "
+	                              "(regular expression)\n", MSELPROC},
+	{"\t'%c'  - focus on specific command line string "
+	                              "(regular expression)\n", MSELARG},
+	{"\t'%c'  - focus on specific process-id (PID)\n",      MSELPID},
+	{"\n",							' '},
+	{"System resource selections (keys shown in header line):\n",' '},
+	{"\t'%c'  - focus on specific system resources    "
+	                              "(regular expression)\n", MSELSYS},
 	{"\n",							      ' '},
 	{"Screen-handling:\n",					      ' '},
 	{"\t^L   - redraw the screen                       \n",	      ' '},
@@ -2332,16 +2571,20 @@ static struct helptext {
 								MSYSFIXED},
 	{"\t'%c'  - suppress sorting system resources              (toggle)\n",
 								MSYSNOSORT},
+	{"\t'%c'  - suppress exited processes in output            (toggle)\n",
+								MSUPEXITS},
 	{"\t'%c'  - no colors to indicate high occupation          (toggle)\n",
 								MCOLORS},
 	{"\t'%c'  - show average-per-second i.s.o. total values    (toggle)\n",
 								MAVGVAL},
+	{"\t'%c'  - calculate proportional set size (PSIZE)        (toggle)\n",
+								MCALCPSS},
 	{"\n",							' '},
 	{"Raw file viewing:\n",					' '},
 	{"\t'%c'  - show next     sample in raw file\n",	MSAMPNEXT},
 	{"\t'%c'  - show previous sample in raw file\n",	MSAMPPREV},
-	{"\t'%c'  - branch to certain time in raw file)\n",	MSAMPBRANCH},
-	{"\t'%c'  - rewind to begin of raw file)\n",		MRESET},
+	{"\t'%c'  - branch to certain time in raw file\n",	MSAMPBRANCH},
+	{"\t'%c'  - rewind to begin of raw file\n",		MRESET},
 	{"\n",							' '},
 	{"Miscellaneous commands:\n",				' '},
 	{"\t'%c'  - change interval-timer (0 = only manual trigger)\n",
@@ -2366,7 +2609,7 @@ static int helplines = sizeof(helptext)/sizeof(struct helptext);
 static void
 showhelp(int helpline)
 {
-	int	winlines = LINES-helpline, lin;
+	int	winlines = LINES-helpline, shown, tobeshown=1, i;
 	WINDOW	*helpwin;
 
 	/*
@@ -2379,24 +2622,33 @@ showhelp(int helpline)
 	/*
 	** show help-lines 
 	*/
-	for (lin=0; lin < helplines; lin++)
+	for (i=0, shown=0; i < helplines; i++, shown++)
 	{
-		wprintw(helpwin, helptext[lin].helpline, helptext[lin].helparg);
+		wprintw(helpwin, helptext[i].helpline, helptext[i].helparg);
 
 		/*
 		** when the window is full, start paging interactively
 		*/
-		if (lin >= winlines-2)
+		if (i >= winlines-2 && shown >= tobeshown)
 		{
 			wmove    (helpwin, winlines-1, 0);
 			wclrtoeol(helpwin);
-			wprintw  (helpwin, "Press any key for next line or "
-			                   "'q' to leave help .......");
+			wprintw  (helpwin, "Press 'q' to leave help, " 
+					"space for next page or "
+					"other key for next line... ");
 
-			if (wgetch(helpwin) == 'q')
+			switch (wgetch(helpwin))
 			{
+			   case 'q':
 				delwin(helpwin);
 				return;
+			   case ' ':
+				shown = 0;
+				tobeshown = winlines-1;
+				break;
+			   default:
+				shown = 0;
+				tobeshown = 1;
 			}
 
 			wmove  (helpwin, winlines-1, 0);
@@ -2405,8 +2657,8 @@ showhelp(int helpline)
 
 	wmove    (helpwin, winlines-1, 0);
 	wclrtoeol(helpwin);
-	wprintw  (helpwin, "End of help - press any key to continue....");
-	(void) wgetch(helpwin);
+	wprintw  (helpwin, "End of help - press 'q' to leave help... ");
+        while ( wgetch(helpwin) != 'q' );
 	delwin   (helpwin);
 }
 
@@ -2442,6 +2694,8 @@ generic_usage(void)
 			MSYSFIXED);
 	printf("\t  -%c  suppress sorting of system resources\n",
 			MSYSNOSORT);
+	printf("\t  -%c  suppress exited processes in output\n",
+			MSUPEXITS);
 	printf("\t  -%c  show limited number of lines for certain resources\n",
 			MSYSLIMIT);
 	printf("\t  -%c  show individual threads\n", MTHREAD);
@@ -2508,7 +2762,6 @@ do_username(char *name, char *val)
 			exit(1);
 		}
 
-		setpwent();
 		while ( (pwd = getpwent()))
 		{
 			if (regexec(&userregex, pwd->pw_name, 0, NULL, 0))
@@ -2601,6 +2854,78 @@ do_maxintf(char *name, char *val)
 }
 
 void
+do_maxnfsm(char *name, char *val)
+{
+	maxnfslines = get_posval(name, val);
+}
+
+void
+do_maxcont(char *name, char *val)
+{
+	maxcontlines = get_posval(name, val);
+}
+
+
+struct colmap {
+	char 	*colname;
+	short	colval;
+} colormap[] = {
+	{ "red",	COLOR_RED,	},
+	{ "green",	COLOR_GREEN,	},
+	{ "yellow",	COLOR_YELLOW,	},
+	{ "blue",	COLOR_BLUE,	},
+	{ "magenta",	COLOR_MAGENTA,	},
+	{ "cyan",	COLOR_CYAN,	},
+	{ "black",	COLOR_BLACK,	},
+	{ "white",	COLOR_WHITE,	},
+};
+static short
+modify_color(char *colorname)
+{
+	int i;
+
+	for (i=0; i < sizeof colormap/sizeof colormap[0]; i++)
+	{
+		if ( strcmp(colorname, colormap[i].colname) == 0)
+			return colormap[i].colval;
+	}
+
+	// required color not found
+	fprintf(stderr, "atoprc - invalid color used: %s\n", colorname);
+	fprintf(stderr, "supported colors:");
+	for (i=0; i < sizeof colormap/sizeof colormap[0]; i++)
+		fprintf(stderr, " %s", colormap[i].colname);
+	fprintf(stderr, "\n");
+
+	exit(1);
+}
+
+
+void
+do_colinfo(char *name, char *val)
+{
+	colorinfo = modify_color(val);
+}
+
+void
+do_colalmost(char *name, char *val)
+{
+	coloralmost = modify_color(val);
+}
+
+void
+do_colcrit(char *name, char *val)
+{
+	colorcrit = modify_color(val);
+}
+
+void
+do_colthread(char *name, char *val)
+{
+	colorthread = modify_color(val);
+}
+
+void
 do_flags(char *name, char *val)
 {
 	int	i;
@@ -2678,7 +3003,7 @@ do_flags(char *name, char *val)
 			break;
 
 		   case MALLPROC:
-			deviatonly  = 0;
+			deviatonly = 0;
 			break;
 
 		   case MAVGVAL:
@@ -2686,11 +3011,11 @@ do_flags(char *name, char *val)
 			break;
 
 		   case MSYSFIXED:
-			fixedhead=1;
+			fixedhead = 1;
 			break;
 
 		   case MSYSNOSORT:
-			sysnosort=1;
+			sysnosort = 1;
 			break;
 
 		   case MTHREAD:
@@ -2698,7 +3023,15 @@ do_flags(char *name, char *val)
 			break;
 
 		   case MCOLORS:
-			usecolors=0;
+			usecolors = 0;
+			break;
+
+		   case MCALCPSS:
+			calcpss = 1;
+			break;
+
+		   case MSUPEXITS:
+			supexits = 1;
 			break;
 		}
 	}

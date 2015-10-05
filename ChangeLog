@@ -1,3 +1,887 @@
+commit 67f5b44cbd2ef5ad3a59e09a6e192af489300a52
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Jun 23 16:55:30 2015 +0200
+
+    Minor bug-fixes.
+
+M	man/atop.1
+M	showgeneric.c
+
+commit 6f0105972808ffd852b833ed81c222f259bc762a
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Jun 23 16:32:16 2015 +0200
+
+    New selection possibilities for processes:
+    Key 'I' can be used to specify one or more PIDs of processes
+    to be selected.
+    Key '/' can be used to specify a command line search string for processes
+    to be selected.
+
+M	man/atop.1
+M	showgeneric.c
+M	showgeneric.h
+
+commit d8f641ecca0ac117c2eacd33cc6517944461a0af
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Jun 23 14:44:49 2015 +0200
+
+    Bugfix for buffer overflow: snprintf instead of sprintf (credits: Nathan Scott).
+
+M	showsys.c
+
+commit 8b82505a8125cf5b351b6de841cf6cd35740b133
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Jun 9 12:30:36 2015 +0200
+
+    Fine-tune statistics about data transfer to/from NFS servers.
+
+M	atopsar.c
+M	man/atop.1
+M	man/atopsar.1
+
+commit 7c2b2cb6615a20e7e130a2fe00d4d029e0f5f3fa
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Jun 9 11:03:10 2015 +0200
+
+    Bug solutions and small modifications for nfs4 mountstats.
+
+M	atop.h
+M	deviate.c
+M	man/atop.1
+M	photosyst.c
+M	showlinux.c
+M	showprocs.c
+M	showsys.c
+M	various.c
+
+commit e3d0e1f03ac0cc48c5add560377933a3abf8ddbe
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Mon Jun 8 17:31:58 2015 +0200
+
+    Added statistics per mounted NFS filesystem (label NFM).
+
+M	atop.c
+M	atop.h
+M	atopsar.c
+M	deviate.c
+M	man/atop.1
+M	man/atoprc.5
+M	man/atopsar.1
+M	parseable.c
+M	photosyst.c
+M	photosyst.h
+M	showgeneric.c
+M	showgeneric.h
+M	showlinux.c
+M	showlinux.h
+M	showsys.c
+
+commit 314a64d9c62b27747d23c6f85011411076482f51
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Mon Jun 8 10:01:05 2015 +0200
+
+    Solved various small bugs found by clang-analyzer.
+
+M	atopsar.c
+M	parseable.c
+M	rawlog.c
+M	showlinux.c
+M	various.c
+
+commit 9b621bcac274df21012a42a2d131143e5857a47a
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri May 29 08:42:05 2015 +0200
+
+    Added buffers for formatting HTTPSTATS-specific output.
+
+M	showlinux.c
+
+commit 66e4b0326d8663b8cc26cde42c9d1232e1742714
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri May 22 09:58:22 2015 +0200
+
+    Accept 'xvd[a-z]' disks with a number behind it (they always seem to
+    end with a number).
+
+M	photosyst.c
+
+commit 7d5f789ddbbaea7ae0e4d2c3f78a3f735ca3a36f
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Mon May 18 08:58:41 2015 +0200
+
+    Rebuild of lost spec file for systemd.
+
+M	atop.specsystemd
+
+commit 94f3da8d2740aaa3abfa7974afa900d985b8a9be
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Mon May 18 08:55:18 2015 +0200
+
+    Maintain current speed (rate) for wireless interfaces.
+
+M	atopsar.c
+M	deviate.c
+M	ifprop.c
+M	ifprop.h
+M	man/atop.1
+M	photosyst.h
+M	showlinux.c
+M	showlinux.h
+M	showsys.c
+
+commit 4ae902d49e3207c70153db2bbb8a3eed775c7c4a
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 9 18:01:12 2015 +0200
+
+    Support systemV and systemd RPMs.
+
+M	atop.specsystemd
+M	atop.specsysv
+M	mkdistr
+
+commit b7b704f4406c92d9c5cda53a4c72bb37afeea744
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 9 17:58:00 2015 +0200
+
+    Added defined value SPEED_UNKNOWN for older releases.
+
+M	ifprop.c
+
+commit ab95f1a444a5e796641012bf3aa85a70f8056760
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 9 16:27:17 2015 +0200
+
+    Support of systemv and systemd RPMs.
+
+M	mkdistr
+
+commit 0f9e3cfeb31450ced24375631c6130e9fef60ae8
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 9 16:21:31 2015 +0200
+
+    Support for OpenVZ containers.
+
+M	atop.c
+M	atop.h
+D	atop.spec
+M	deviate.c
+M	man/atop.1
+M	man/atoprc.5
+M	parseable.c
+M	photoproc.c
+M	photoproc.h
+M	photosyst.c
+M	photosyst.h
+M	showgeneric.c
+M	showgeneric.h
+M	showlinux.c
+M	showlinux.h
+M	showprocs.c
+M	showsys.c
+
+commit b77825747f165a7c3bd76353d8f428676732cedd
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 9 16:20:24 2015 +0200
+
+    Separate RPM spec files for SystemV init and systemd.
+
+A	atop.specsystemd
+A	atop.specsysv
+
+commit 8f0148d9946344fe9b8a5eeee5a20588e0b149dd
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Apr 7 13:02:58 2015 +0200
+
+    Addition of NFS (server/client) statistics on system level.
+
+M	Makefile
+M	atopsar.c
+M	deviate.c
+M	man/atop.1
+M	man/atopsar.1
+M	parseable.c
+M	photosyst.c
+M	photosyst.h
+M	showlinux.c
+M	showlinux.h
+M	showsys.c
+
+commit 6e133e74acd987e915d7edeb4dab281ed8a055e2
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Mar 24 15:52:11 2015 +0100
+
+    Add NFS client and NFS server statistics.
+
+M	atopsar.c
+M	deviate.c
+M	man/atop.1
+M	man/atopacctd.8
+M	man/atoprc.5
+M	man/atopsar.1
+M	parseable.c
+M	photosyst.c
+M	photosyst.h
+M	showlinux.c
+M	showlinux.h
+M	showsys.c
+
+commit 6da40d213f14865356956b196475c080be1c79e6
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Mar 24 08:36:51 2015 +0100
+
+    Minor modification related to systemd-based install.
+
+M	Makefile
+
+commit 04276882956a196e872fca17fb1dd73289eb3d1f
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed Feb 25 15:26:55 2015 +0100
+
+    Prepare atop and atopacct for use on systemd-based systems.
+
+M	Makefile
+M	README
+A	atop-pm.sh
+M	atop.service
+M	atopacct.init
+A	atopacct.service
+M	atopacctd.c
+M	atopacctd.h
+M	mkdistr
+
+commit 1e2fc1c2275d71114a62fe95ca7363a6d9d1cd8a
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed Feb 25 15:20:05 2015 +0100
+
+    Avoid negative utilization counters for disks and logical volumes.
+    These negative values might cause buffer overflows within atop.
+
+M	showsys.c
+M	various.c
+
+commit 2c5327f1a0a6797383785e6893b46f39d3a67c85
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Feb 24 09:34:52 2015 +0100
+
+    Avoid that process accounting is reactivated too frequently
+    (and unnecessary).
+
+M	atopacctd.c
+
+commit cfda21540a2a9b6545259ed612f8afc22b2218b8
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Feb 24 09:32:41 2015 +0100
+
+    Added creation of the SBINPATH directory for atopacctd.
+
+M	Makefile
+
+commit 688f446ab5fb81dc6c44c065f956913682d1b03f
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Mon Feb 2 08:32:57 2015 +0100
+
+    Prepare systemd-based installation.
+
+A	atop.cronsystemd
+A	atop.cronsysv
+
+commit ab8db5f44f1b4edff624c4698849e391588e0cbd
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Mon Feb 2 08:31:33 2015 +0100
+
+    Prepare systemd-based installation.
+
+M	Makefile
+M	atop.c
+D	atop.cron
+M	atop.daily
+M	atop.init
+M	atop.service
+M	mkdistr
+M	psaccs_atop
+M	psaccu_atop
+
+commit a5e0d6d0c758ce8ecc3ba6f8df2c30df8af64cc2
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Mon Dec 8 09:38:47 2014 +0100
+
+    Define proper line speed for network interfaces faster than 1 Gbit/sec.
+
+M	ifprop.c
+
+commit d18f067446deb39933b21ba7b2874ea63cb47e71
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Oct 17 14:31:27 2014 +0200
+
+    Minor change.
+
+M	mkdistr
+
+commit 52e9c4a0f05f76ab81d46dc1f42ac69f5e123ae5
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Oct 17 14:28:10 2014 +0200
+
+    Minor correction in man-page.
+
+M	man/atopacctd.8
+
+commit c18d1354898e8871f75dedc8e8427694606b3832
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Thu Aug 28 13:52:57 2014 +0200
+
+    Correction of typo's in the man pages, including a wrong counter name
+    in the output of atop ('udpie' for UDP input errors).
+
+M	Makefile
+M	man/atop.1
+M	man/atopacctd.8
+M	man/atoprc.5
+M	man/atopsar.1
+M	showsys.c
+
+commit 4e739738da3aa5931cc0f66c7d402dea50ca6f6f
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Thu Aug 28 11:51:13 2014 +0200
+
+    OpenVZ support: virtual environment identifier per process (envID).
+
+M	photoproc.c
+M	photoproc.h
+M	showlinux.c
+M	showlinux.h
+M	showprocs.c
+
+commit 3bd1bab7bd6fb0ec110922afbb169264a335a74f
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jul 25 15:31:42 2014 +0200
+
+    Activate atopacctd before activating the atop daemon.
+
+M	atop.spec
+
+commit 0d02d0565b6d0df1c22be3237d145b7e0b7e68eb
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jul 25 14:58:19 2014 +0200
+
+    Improved help screen handling: use space bar to get next page.
+
+M	showgeneric.c
+
+commit 5cebf4101c11d4680e57250635c6148b104bf4f9
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jul 25 13:48:37 2014 +0200
+
+    Bug solution: when the screen-width is larger than the total number of
+    columns to be printed, empty columns are added, however one column too many.
+
+M	showsys.c
+
+commit b25ef4ec59240c58e929c93d17d42c91cf70121e
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jul 25 13:48:09 2014 +0200
+
+    Removed useless empty column for memory statistics.
+
+M	showlinux.c
+
+commit 38163c1230c5e58890e783dd1cb29e14640e6099
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jul 25 13:47:36 2014 +0200
+
+    Cosmetic change.
+
+M	atopacctd.c
+
+commit 636fa8df11c99b3d6468f4c13c830c29ba79638d
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Thu Jul 24 16:07:01 2014 +0200
+
+    Detect if process accounting has been switched off by some other
+    program and switch it on again.
+
+M	atopacctd.c
+M	atopacctd.h
+
+commit 268750adfc4e4a00050501d9c70d56436b4bb0a6
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Jun 28 11:15:17 2014 +0200
+
+    Add a warning about the aggregation of disk transfer to the parent process
+    for the RDDSK and WRDSK counters.
+
+M	man/atop.1
+
+commit 1396164f8a5c880dc14658cc69a685babf040739
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 20 14:51:53 2014 +0200
+
+    Add automatic start of atopacctd daemon.
+
+M	Makefile
+
+commit 0dcc489d0ded0b2d2241cd9a625fd5206ddb7cd6
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 20 14:06:08 2014 +0200
+
+    Add man page of atopacctd.
+
+M	atop.spec
+M	mkdistr
+
+commit 5295539f7b7ba1e725d20caf92eb9d28e1dd87ce
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 20 13:52:16 2014 +0200
+
+    Add man page for the atopacct daemon.
+
+A	man/atopacctd.8
+
+commit 027c748ffcb1a4ee926a3c14f2241342a2e6c5bd
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 20 13:49:14 2014 +0200
+
+    Modify the man pages and installation procedures for the introduction
+    of the atopacctd daemon.
+
+M	Makefile
+M	atop.spec
+M	atopacctd.c
+M	man/atop.1
+M	man/atoprc.5
+M	man/atopsar.1
+
+commit 366622d86d3716661ad36b86bbe833bc9ce29496
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed Jun 18 13:24:49 2014 +0200
+
+    Introduce the 'G' key to suppress showing/accumulating exited processes
+    in the output.
+
+M	man/atop.1
+M	man/atoprc.5
+M	showgeneric.c
+M	showgeneric.h
+
+commit a7668eb60ebda954dd8223e4a501b21afdea4cec
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 13 07:55:33 2014 +0200
+
+    Support CPU frequencies for systems with Intel P-state driver.
+    Credits: Sjon Hortensius
+
+M	photosyst.c
+
+commit 8e269cc3a8df55852490b8b99148b0f973e3d334
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 13 07:51:55 2014 +0200
+
+    Cosmetic change.
+
+M	atopacctd.c
+
+commit f12727d632052e6a82149d6e4804e354f2caae54
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 13 07:50:25 2014 +0200
+
+    Remove rc-scripts with old sequence numbers (if any).
+
+M	Makefile
+
+commit 7cec49a8d095e4d520ffe7f21499a7996137fc78
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Jun 7 12:47:29 2014 +0200
+
+    Doubled the %-signs to get the proper date string.
+
+M	atop.service
+
+commit 9b699e1c0aea4842609f53ba0df061b568aa6d13
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Jun 7 12:11:52 2014 +0200
+
+    Source file netlink.c compiled without -O2 due to a strict-aliasing
+    warning.
+
+M	Makefile
+
+commit c1963ca5c51ccc8dba9866238376d49ffece962a
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Jun 7 12:09:34 2014 +0200
+
+    Source file netlink.c compiled without -O2 due to a strict-aliasing
+    warning.
+
+D	atopacctd
+
+commit f2f369b2c79117aa03ce393e9cb54eab3bc36009
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Jun 7 11:29:36 2014 +0200
+
+    Rename variables to clearly distinghuish between the two
+    semaphore groups.
+
+M	acctproc.c
+
+commit 35ded9cabe93b4f6a126711d31dbe3fdfd3d3ebe
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Jun 7 11:28:46 2014 +0200
+
+    Add the -R flag to gather PSIZE info in the background.
+
+M	45atoppm
+M	atop.service
+
+commit d2a545c15bf4e3099d4391f24d20b079a5759872
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 6 08:49:35 2014 +0200
+
+    Introduction of new daemon atopacctd. This daemon switches on
+    process accounting and transfers every accounting record to an
+    accounting shadow file. The source accounting file will regularly
+    be truncated, while the shadow files are written with a limited
+    size in a queued way. Non-used shadow files are deleted regularly.
+
+A	atopacct.init
+A	atopacctd
+A	atopacctd.c
+A	atopacctd.h
+A	netlink.c
+
+commit b3909dd3243a7011ee605ed387692dcb0d8e17de
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri Jun 6 08:44:54 2014 +0200
+
+    Introduction of new daemon atopacctd. This daemon switches on
+    process accounting and transfers every accounting record to
+    an accounting shadow file. The source accounting file will
+    regularly be truncated, while the shadow files are written
+    with a limited size in a queued way. Non-used shadow files
+    are deleted regularly.
+
+M	Makefile
+M	acctproc.c
+M	acctproc.h
+M	atop.c
+M	atop.init
+M	atop.spec
+M	man/atoprc.5
+M	showgeneric.c
+
+commit 65abbee8fe9f4ea4ec7c875e897d1aa3a5b2763d
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Thu May 29 13:24:55 2014 +0200
+
+    Add the -R flag for monitoring in the background.
+
+M	atop.service
+
+commit 295585730cbbe322d0dd556c45413e2ab0737099
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 16:59:54 2014 +0200
+
+    Usage message of atop and atopsar extended with reference
+    to the man-page.
+
+M	atop.c
+M	atopsar.c
+
+commit 7df1f797fa27f5dd53298f7511bb36811dc51e14
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 16:46:00 2014 +0200
+
+    Added a function prototype for priline to verify the calling
+    (cause of earlier problems).
+
+M	atopsar.c
+
+commit b495b78b8b120bcf266440f6ed1f0e133573e76b
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 14:29:02 2014 +0200
+
+    Bug-solution: segmentation fault when one of the process names
+    in the system contains a newline.
+
+M	photoproc.c
+
+commit 216c4ccc9e26d1d195985f8b2c45c4008492a341
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 13:54:36 2014 +0200
+
+    Introduce configurable colors: in the atoprc file, colors can
+    be defined for information messages (default green), threads
+    (default yellow), almost critical resources (default cyan) and
+    critical resources (default red).
+
+M	atop.c
+M	man/atop.1
+M	man/atoprc.5
+M	man/atopsar.1
+M	showgeneric.c
+M	showgeneric.h
+M	showsys.c
+
+commit fd2bb81e07dbb1ac97a559e7099e717e05b80642
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 12:17:08 2014 +0200
+
+    Cosmetic change to message.
+
+M	showgeneric.c
+
+commit dc1ef5d83b72095536cfabd53adcfcfc8ec37a01
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 12:15:56 2014 +0200
+
+    Solve floating point exception in case that the process accouting
+    file was not open.
+
+M	acctproc.c
+
+commit a94a6170476406d1ca85aa018ea71eea6d41f5bd
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 11:27:05 2014 +0200
+
+    Limit the names of network interfaces to six characters max.
+
+M	atopsar.c
+
+commit 19826d8ae098b21cf733cf4e69bfb1936cddc7dd
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 11:01:13 2014 +0200
+
+    Modified names for RPM files.
+
+M	mkdistr
+
+commit b71978ea7ec610305a239529345e816e1323a02b
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 10:19:16 2014 +0200
+
+    Added Requires and BuildRequires.
+
+M	atop.spec
+
+commit f6d0eae38d1e9f093d15fb6fa74d353e59efd05d
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed May 28 10:18:35 2014 +0200
+
+    Cosmetic change.
+
+M	Makefile
+
+commit 318890acda8a7cab6bba829fa3276e774f1bd4e0
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sun May 25 22:01:54 2014 +0200
+
+    Correction for PSIZE calculation:
+    regain and drop root privileges.
+
+M	photoproc.c
+
+commit 01be030273991089b6ded31d6a28855bf874d7be
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 24 14:10:55 2014 +0200
+
+    Introduction of proportional memory size (PSIZE) per process.
+    For the resident memory parts used by a process that are shared with
+    other processes, only a proportional part (shared memory part divided
+    by the number of sharers) is accounted to the process. Since the
+    gathering of this value is rather time-consuming (reading the
+    smaps file of every process), it is optional ('R' key or '-R' flag).
+
+M	atop.c
+M	atop.daily
+M	atop.h
+M	deviate.c
+M	man/atop.1
+M	parseable.c
+M	photoproc.c
+M	photoproc.h
+M	showgeneric.c
+M	showgeneric.h
+M	showlinux.c
+M	showlinux.h
+M	showprocs.c
+
+commit 899cdbd18447ce29f901d43531a1702416ab22ad
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 24 11:02:18 2014 +0200
+
+    Increased number of LVMs and disks supported.
+
+M	photosyst.h
+
+commit e2f7fb5bc45510b2ec14269e71a0b8ca7ae5a454
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri May 23 23:33:40 2014 +0200
+
+    Resize message shows new dimensions.
+
+M	showgeneric.c
+
+commit 0f54b4c1ebca739cda28ae5793475b06e90e0b88
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri May 23 15:39:46 2014 +0200
+
+    The guest percentage that is shown for CPUs, is not a separate
+    category that should be totalized with the other categories. In fact,
+    it overlaps with the user mode percentage. So if one of the virtual
+    machines executes a looping process, on the KVM hypervisor the
+    user percentage and guest percentage should both show 100% instead
+    of both 50%.
+
+M	atopsar.c
+M	deviate.c
+M	man/atop.1
+M	man/atopsar.1
+M	procdbase.c
+M	showlinux.c
+
+commit 3149aa8f4720e615148179ae8cc5146b8c3f5433
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri May 23 13:28:20 2014 +0200
+
+    Useless buffer formatting removed.
+
+M	atopsar.c
+
+commit e96c1fff1c7a7ca292f3aedaaa28b92d2e7b9629
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Fri May 23 13:19:21 2014 +0200
+
+    Removed double disk entry for 'vd...' disks.
+
+M	photosyst.c
+
+commit 239bd26a925d54d184248f00df35586d4d8d441d
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sun Jan 26 15:42:31 2014 +0100
+
+    Solve segmentation vioalation with atopser (wrong number of
+    arguments passed to priline function).
+
+M	atopsar.c
+
+commit 3829e7382f348489f61f01b4e19fb4fb12bc36ef
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sun Jan 26 15:37:12 2014 +0100
+
+    Solve segmentation violation when making summaries:
+    Extra parameter added to priline-function call.
+
+M	atopsar.c
+M	man/atop.1
+M	rawlog.c
+
+commit fbce79c76ddb6a38a2bc22b44a95edcf9cf78a36
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Dec 7 12:17:07 2013 +0100
+
+    When process accounting is switched on and a child process
+    has been created and terminated, it still might occur that
+    no process accounting record has been written (kernel failure?).
+    This situation resulted in a Floating Point Exception signal.
+
+M	acctproc.c
+
+commit 2c7fe393518d861ff2fac3b38888389dd13c9b67
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat Oct 26 13:07:18 2013 +0200
+
+    Add a space between two columns, that were show without white space.
+
+M	parseable.c
+
+commit 948581cce702ffdf93d8e632c6ef12aa3ff6a31b
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Sat May 11 16:58:05 2013 +0200
+
+    Add new counter for memory that is claimed by the vmware balloon
+    driver (to be withdrawn from this virtual machine in favour of
+    other virtual machines).
+
+M	deviate.c
+M	man/atop.1
+M	parseable.c
+M	photosyst.c
+M	photosyst.h
+M	showlinux.c
+M	showlinux.h
+M	showsys.c
+
+commit 3a82bbeda1627a8a133f64f4434edaeefe413759
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed Apr 24 10:47:39 2013 +0200
+
+    Support for huge pages (total and in use).
+
+M	deviate.c
+M	man/atop.1
+M	photosyst.c
+M	photosyst.h
+M	showlinux.c
+M	showlinux.h
+M	showsys.c
+
+commit 22295853af2f10701f6da3243b75f55fc2eb5f6d
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Apr 23 14:42:24 2013 +0200
+
+    Documentation improvements.
+
+M	man/atop.1
+M	showgeneric.c
+
+commit 05266573ea93a9866121909b4bd61856103e9a28
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Apr 2 10:59:24 2013 +0200
+
+    Documentation improved concerning top-3 of processes (atopsar)
+    and the netatop module (atop).
+
+M	man/atop.1
+M	man/atopsar.1
+
+commit 9be21d695f218120e501d459ae1bdf112b4dbba5
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Thu Jan 10 13:54:08 2013 +0100
+
+    Cosmetic change: rename some variables to ease future maintenance.
+
+M	atop.c
+M	deviate.c
+M	photoproc.h
+
+commit ffd892d16dc60950a637db45bf2af692a3d2a91e
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed Dec 19 15:45:40 2012 +0100
+
+    Under certain circumstances, the number of exited processes might
+    be less than requested, so correct the counter nrexit.
+
+M	acctproc.c
+M	atop.c
+
+commit ba35522fbfb1c4fdb90d0dc68b0ac50e95cae73f
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Tue Dec 11 23:16:36 2012 +0100
+
+    Solution for the following bug:
+    When process accounting type 2 is used by the kernel (i.e.
+    no PID is the accounting record), atop crashes when thread
+    view is enabled.
+    Credits: Alex Samorukov
+
+M	showgeneric.c
+
+commit c34bb60f74c25c3da24ab485ff6d41b8435609b1
+Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
+Date:   Wed Nov 21 21:50:55 2012 +0100
+
+    Corrected value 'curproc' in -P report.
+
+M	atopsar.c
+
 commit 321e5288151db22e643569f8b71709d1f5da6bf4
 Author: Gerlof Langeveld <gerlof.langeveld@atoptool.nl>
 Date:   Mon Nov 19 09:26:32 2012 +0100

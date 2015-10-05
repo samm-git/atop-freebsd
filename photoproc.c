@@ -145,13 +145,7 @@ static const char rcsid[] = "$Id: photoproc.c,v 1.33 2010/04/23 12:19:35 gerlof 
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
-#ifdef FREEBSD 
- #include <kvm.h>
- #include <sys/sysctl.h>
- #include <sys/user.h>
- extern  kvm_t *kd;
- extern char	filterkernel;
-#endif
+#include <time.h>
 
 #include "atop.h"
 #include "photoproc.h"
@@ -168,17 +162,12 @@ static const char rcsid[] = "$Id: photoproc.c,v 1.33 2010/04/23 12:19:35 gerlof 
 #define ATOPSTAT	"%lld %llu %lld %llu %lld %llu %lld %llu "	\
 			"%lld %llu %lld %llu %lld %lld"
 
-#ifdef linux
 static int	procstat(struct tstat *, unsigned long long, char);
-static void	proccmd(struct tstat *);
 static int	procstatus(struct tstat *);
 static int	procio(struct tstat *);
-#elif defined(FREEBSD)
-static void	proccmd(struct tstat *curtask, struct kinfo_proc *pp);
-static int	procstat(struct tstat *, unsigned long long, char, struct kinfo_proc *);
-#endif
+static void	proccmd(struct tstat *);
+static void	procsmaps(struct tstat *);
 
-#ifdef linux
 int
 photoproc(struct tstat *tasklist, int maxtask)
 {
@@ -261,25 +250,33 @@ photoproc(struct tstat *tasklist, int maxtask)
 		*/
 		curtask	= tasklist+tval;
 
-		if ( !procstat(curtask, bootepoch, 1)) /* from /proc/pid/stat */
+		if ( !procstat(curtask, bootepoch, 1))	/* from /proc/pid/stat */
 		{
 			if ( chdir("..") == -1);
 			continue;
 		}
 
-		if ( !procstatus(curtask) )	    /* from /proc/pid/status  */
+		if ( !procstatus(curtask) )		/* from /proc/pid/status  */
 		{
 			if ( chdir("..") == -1);
 			continue;
 		}
 
-		if ( !procio(curtask) )		    /* from /proc/pid/io      */
+		if ( !procio(curtask) )			/* from /proc/pid/io      */
 		{
 			if ( chdir("..") == -1);
 			continue;
 		}
 
-		proccmd(curtask);		    /* from /proc/pid/cmdline */
+		proccmd(curtask);			/* from /proc/pid/cmdline */
+
+		/*
+		** reading the smaps file for every process with every sample
+		** is a really 'expensive' from a CPU consumption point-of-view,
+		** so gathering this info is optional
+		*/
+		if (calcpss)
+			procsmaps(curtask);		/* from /proc/pid/smaps */
 
 		// read network stats from netatop
 		netatop_gettask(curtask->gen.tgid, 'g', curtask);
@@ -375,163 +372,6 @@ photoproc(struct tstat *tasklist, int maxtask)
 	return tval;
 }
 
-#elif defined(FREEBSD)
-
-static void
-proccmd(struct tstat *curtask, struct kinfo_proc *pp){
-	static char     string[CMDLEN];
-	char          **argv;
-	string[0] = 0;
-	
-	argv = kvm_getargv(kd, pp, sizeof(string));
-	while (argv && *argv) {
-		if (string[0] != 0)
-			strcat(string, " ");
-		strcat(string, *argv);
-		argv++;
-	}
-	memset(curtask->gen.cmdline, 0, CMDLEN+1);
-
-	// enable display of long kernel processes
-	if (!strlen(string) && 
-	    ((pp->ki_flag & P_SYSTEM ) || (pp->ki_flag & P_KTHREAD)))
-		/* kernel process, show with {name} */
-		snprintf(curtask->gen.cmdline, CMDLEN-1, "{%s}", pp->ki_comm);
-	else
-	    strncpy(curtask->gen.cmdline, string, CMDLEN);
-}
-
-static void
-procthr(struct tstat *curtask, struct kinfo_proc *pp){
-	snprintf(curtask->gen.cmdline, CMDLEN-1, "[%s]",
-		strlen(pp->ki_ocomm) ? pp->ki_ocomm : pp->ki_comm);
-}
-
-int
-photoproc(struct tstat *tasklist, int maxtask)
-{
-	static int			firstcall = 1;
-	static unsigned long long	bootepoch;
-	
-	register struct tstat	*curtask = NULL, *prev_curtask = NULL;
-	
-	int		tval=0;
-	
-	/*
-	** one-time initialization stuff
-	*/
-	if (firstcall)
-	{
-		/*
-		** check if this kernel offers io-statistics per task
-		*/
-		regainrootprivs();
-		
-		supportflags |= IOSTAT;
-		
-		if (! droprootprivs())
-			cleanstop(42);
-		
-		/*
- 		** find epoch time of boot moment
-		*/
-		bootepoch = getboot();
-		
-		firstcall = 0;
-	}
-	
-	/*
-	** probe if the netatop module and (optionally) the
-	** netatopd daemon are active
-	*/
-	regainrootprivs();
-	
-	// netatop_probe();
-	
-	if (! droprootprivs())
-		cleanstop(42);
-	
-	struct kinfo_proc *pbase;
-	int nproc, prev_pid, i;
-	pbase = kvm_getprocs(kd, KERN_PROC_ALL, 0, &nproc);
-	prev_pid = 0;
-	struct tstat *curthr = NULL;
-	
-	
-	for (i = nproc; --i >= 0; ++pbase) {
-		
-		if(pbase->ki_pid)  {
-			if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KTHREAD)))
-				continue;
-			
-			/*
-			** gather process-level information
-			*/
-			
-			int is_proc = 0;
-			if(prev_pid==pbase->ki_pid && prev_curtask) {	
-				/*
-				** process thread. Use previous process to fill thread data 
-				*/
-				is_proc = 0;
-				curthr = tasklist+tval ;
-				procstat(curthr, bootepoch, is_proc, pbase);
-				procthr(curthr, pbase);
-			}
-			else {
-				is_proc = 1;
-				curtask = tasklist+tval;
-				procstat(curtask, bootepoch, is_proc, pbase);
-				proccmd(curtask, pbase);
-				if(curtask->gen.nthr > 1) { /* add main thread to the threads list */
-					tval++;
-					curthr = tasklist+tval ;
-					procstat(curthr, bootepoch, 0, pbase);
-					procthr(curthr, pbase);
-				}
-			}
-			/* count threads */
-			switch (pbase->ki_stat) {
-	    		case SRUN:
-	    			if(!is_proc)
-	    			    curthr->gen.nthrrun = 1;
-	    			curtask->gen.nthrrun++;
-	    			break;
-			case SSLEEP:
-			case SIDL:
-			case SSTOP:
-			case SLOCK:
-	    			if(!is_proc)
-	    			    curthr->gen.nthrslpi = 1;
-				curtask->gen.nthrslpi++;
-				break;
-			case SWAIT:
-	    			if(!is_proc)
-	    			    curthr->gen.nthrslpu = 1;
-				curtask->gen.nthrslpu++;
-				break;
-			default:
-	    			if(!is_proc)
-	    			    curthr->gen.nthrrun = 1;
-				curtask->gen.nthrrun++;
-			}
-			if(!is_proc) {
-			    curtask->cpu.utime += curthr->cpu.utime;
-			    curtask->cpu.stime += curthr->cpu.stime;
-			}
-
-			prev_pid=pbase->ki_pid;
-			prev_curtask=curtask;
-			tval++;
-		}
-		if(tval == maxtask)  /* do not write more procs then allocated memory */
-			break;
-		
-	}
-	return tval;
-}
-#endif // FREEBSD
-
 /*
 ** count number of processes currently running
 */
@@ -539,10 +379,10 @@ unsigned int
 countprocs(void)
 {
 	unsigned int	nr=0;
-#ifdef linux
 	DIR		*dirp;
 	struct dirent	*entp;
 	char		origdir[1024];
+
 	if ( getcwd(origdir, sizeof origdir) == NULL)
 		cleanstop(53);
 
@@ -564,26 +404,10 @@ countprocs(void)
 
 	if ( chdir(origdir) == -1)
 		cleanstop(53);
-#elif defined(FREEBSD)
-	int nproc_all = 0, i = 0;
-	struct kinfo_proc *pbase;
-	/* 
-	** Result of the function is used to (re)allocte memory for the proc
-	** structure.
-	*/
-	pbase = kvm_getprocs(kd, KERN_PROC_ALL, 0, &nproc_all);
-	for (i = nproc_all; --i >= 0; ++pbase) {
-	    if(pbase->ki_pid)  {
-		if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KTHREAD))) 
-		    continue;
-		nr++;
-	    }
-	}
-#endif
+
 	return nr;
 }
 
-#ifdef linux
 /*
 ** open file "stat" and obtain required info
 */
@@ -592,27 +416,44 @@ procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc)
 {
 	FILE	*fp;
 	int	nr;
-	char	line[4096], *cmdhead, *cmdtail;
+	char	line[4096], *p, *cmdhead, *cmdtail;
 
 	if ( (fp = fopen("stat", "r")) == NULL)
 		return 0;
 
-	if (fgets(line, sizeof line, fp) == NULL)
+	if ( (nr = fread(line, 1, sizeof line-1, fp)) == 0)
 	{
 		fclose(fp);
 		return 0;
 	}
+
+	line[nr] = '\0';	// terminate string
 
 	/*
     	** fetch command name
 	*/
 	cmdhead = strchr (line, '(');
 	cmdtail = strrchr(line, ')');
+
+	if (!cmdhead || !cmdtail || cmdtail < cmdhead) // parsing failed?
+	{
+		fclose(fp);
+		return 0;
+	}
+
 	if ( (nr = cmdtail-cmdhead-1) > PNAMLEN)
 		nr = PNAMLEN;
 
-	memcpy(curtask->gen.name, cmdhead+1, nr);
-	*(curtask->gen.name+nr) = 0;
+	p = curtask->gen.name;
+
+	memcpy(p, cmdhead+1, nr);
+	*(p+nr) = 0;
+
+	while ( (p = strchr(p, '\n')) != NULL)
+	{
+		*p = '?';
+		p++;
+	}
 
 	/*
   	** fetch other values
@@ -665,122 +506,7 @@ procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc)
 
 	return 1;
 }
-#elif defined(FREEBSD)
-// write all process related activity, except I/O
-static int
-procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc, struct kinfo_proc *pp)
-{
-	if (isproc){
-		if ((pp->ki_flag & P_SYSTEM ) || (pp->ki_flag & P_KTHREAD))
-			/* kernel process, show with {name} */
-			snprintf(curtask->gen.name,PNAMLEN-1, "{%s}", pp->ki_comm);
-		else
-			strncpy(curtask->gen.name, pp->ki_comm, PNAMLEN-1);
-		curtask->gen.name[PNAMLEN] = 0;
-	}
-	else {
-		snprintf(curtask->gen.name,PNAMLEN-1, "[%s]", strlen(pp->ki_ocomm) ? pp->ki_ocomm : pp->ki_comm);
-	}
-	/* 
-	 * FIXME need to review http://www.unix.com/man-page/all/2/rtprio/ one more time 
-	 Probably we need to change labels in FreeBSD atop as well to make it look more native
-	*/
-	switch (PRI_BASE(pp->ki_pri.pri_class)) {
-	    case PRI_REALTIME:
-	    curtask->cpu.rtprio = ((pp->ki_flag & P_KTHREAD) ? pp->ki_pri.pri_native :
-		        pp->ki_pri.pri_user) - PRI_MIN_REALTIME;
-	    break;
-	    case PRI_IDLE:
-	    curtask->cpu.rtprio = ((pp->ki_flag & P_KTHREAD) ? pp->ki_pri.pri_native :
-		        pp->ki_pri.pri_user) - PRI_MIN_IDLE;
-	    break;
-	    default: 
-		curtask->cpu.rtprio = 0;
-	}
-	
-	/*
-	 *   generate "STATE" field, emulating linux
-	 *   - see http://linux.die.net/man/5/proc
-	 */
-	curtask->gen.state = ' ';
-	switch (pp->ki_stat) {
-	case SRUN:
-		curtask->gen.state = 'R';
-		break;
-	case SLOCK: /* Blocked on a lock. */
-		curtask->gen.state = 'L';
-		break;
-	case SSLEEP:
-		curtask->gen.state = 'S';
-		break;
-	case SIDL: /* Process being created by fork. */ 
-		curtask->gen.state = 'I';
-		break;
-	case SSTOP: /* Process debugging or suspension. */ 
-		curtask->gen.state = 'T';
-		break;
-	case SZOMB:
-		curtask->gen.state = 'Z';
-		break;
-	case SWAIT:
-		curtask->gen.state = 'D';
-		break;
-	}
-	// gen
-	curtask->gen.tgid     = pp->ki_pid; /* FreeBSD is not using thread groups */
-	curtask->gen.pid      = (isproc) ? pp->ki_pid : pp->ki_tid;
-	curtask->gen.ppid     = pp->ki_ppid;
-	curtask->gen.ruid     = pp->ki_ruid;
-	curtask->gen.euid     = pp->ki_uid;;
-	curtask->gen.suid     = pp->ki_svuid;;
-	curtask->gen.fsuid    = 0; /* we don`t have it on BSD? */
-	curtask->gen.rgid     = pp->ki_rgid;
-	curtask->gen.egid     = pp->ki_pgid;
-	curtask->gen.sgid     = pp->ki_svgid;
-	curtask->gen.fsgid    = 0; /* we don`t have it on BSD? */
-	curtask->gen.jid      = pp->ki_jid;
-	curtask->gen.nthr     = (isproc) ? pp->ki_numthreads : 1;
-	curtask->gen.isproc   = isproc;
-	curtask->gen.excode   = 0;
-	curtask->gen.btime    = pp->ki_start.tv_sec;
-	curtask->gen.fsgid    = 0; /* we don`t have it on BSD? */
-	// cpu
-	curtask->cpu.utime    = ((count_t)pp->ki_rusage.ru_utime.tv_sec + (float)pp->ki_rusage.ru_utime.tv_usec/1000000) * hertz;
-	curtask->cpu.stime    = ((count_t)pp->ki_rusage.ru_stime.tv_sec + (float)pp->ki_rusage.ru_stime.tv_usec/1000000) * hertz;
-	curtask->cpu.prio     = pp->ki_pri.pri_level - PZERO; /* from freebsd top */
-	curtask->cpu.nice     = pp->ki_nice;
-	curtask->cpu.policy   = pp->ki_pri.pri_class; // it is different value then in Linux
-	curtask->cpu.curcpu   = (int)pp->ki_lastcpu;
-	// mem
-	curtask->mem.minflt   = pp->ki_rusage.ru_minflt;
-	curtask->mem.majflt   = pp->ki_rusage.ru_majflt;
-	curtask->mem.vexec    = pp->ki_tsize * (pagesize/1024);
-	curtask->mem.vmem     = pp->ki_size / 1024;
-	curtask->mem.rmem     = pp->ki_rssize * (pagesize/1024);
-	curtask->mem.vgrow    = 0;	/* calculated later */
-	curtask->mem.rgrow    = 0;	/* calculated later */
-	curtask->mem.vdata    = pp->ki_dsize * (pagesize/1024);
-	curtask->mem.vstack   = pp->ki_ssize * (pagesize/1024);
-	curtask->mem.vlibs    = (pp->ki_size/pagesize - pp->ki_dsize - 
-		pp->ki_ssize -pp->ki_tsize - 1) * (pagesize/1024); // from linprocfs.c
-	curtask->mem.vswap    = 0; // XXX, no idea how to get it on BSD
-	// disk
-	curtask->dsk.rio      = pp->ki_rusage.ru_inblock; /* Available data is in blocks only */
-	curtask->dsk.rsz      = pp->ki_rusage.ru_inblock;
-	curtask->dsk.wio      = pp->ki_rusage.ru_oublock;
-	curtask->dsk.wsz      = pp->ki_rusage.ru_oublock;
 
-	/* 
-	* sleepavg value currently is not used by atop 
-	* and not directly provided by FreeBSD kernel 
-	*/ 
-	curtask->cpu.sleepavg = 0;
-	return 1;
-}
-
-#endif
-
-#ifdef linux
 /*
 ** open file "status" and obtain required info
 */
@@ -832,6 +558,18 @@ procstatus(struct tstat *curtask)
 			sscanf(line, "Gid: %d %d %d %d",
 				&(curtask->gen.rgid), &(curtask->gen.egid),
 				&(curtask->gen.sgid), &(curtask->gen.fsgid));
+			continue;
+		}
+
+		if (memcmp(line, "envID:", 6) ==0)
+		{
+			sscanf(line, "envID: %d", &(curtask->gen.ctid));
+			continue;
+		}
+
+		if (memcmp(line, "VPid:", 5) ==0)
+		{
+			sscanf(line, "VPid: %d", &(curtask->gen.vpid));
 			continue;
 		}
 
@@ -979,4 +717,49 @@ proccmd(struct tstat *curtask)
 	}
 }
 
-#endif
+/*
+** open file "smaps" and obtain required info
+*/
+static void
+procsmaps(struct tstat *curtask)
+{
+	FILE	*fp;
+	char	line[4096];
+	count_t	pssval;
+
+
+	/*
+ 	** open the file (always succeeds, even if no root privs)
+	*/
+	regainrootprivs();
+
+	if ( (fp = fopen("smaps", "r")) )
+	{
+		curtask->mem.pmem = 0;
+
+		while (fgets(line, sizeof line, fp))
+		{
+			if (memcmp(line, "Pss:", 4) != 0)
+				continue;
+
+			// PSS line found to be accumulated
+			sscanf(line, "Pss: %llu", &pssval);
+			curtask->mem.pmem += pssval;
+		}
+
+		/*
+		** verify if fgets returned NULL due to error i.s.o. EOF
+		*/
+		if (ferror(fp))
+			curtask->mem.pmem = (unsigned long long)-1LL;
+
+		fclose(fp);
+	}
+	else
+	{
+		curtask->mem.pmem = (unsigned long long)-1LL;
+	}
+
+	if (! droprootprivs())
+		cleanstop(42);
+}

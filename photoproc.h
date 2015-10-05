@@ -44,7 +44,6 @@ struct tstat {
 		int	egid;		/* eff.  group identification 	*/
 		int	sgid;		/* saved group identification 	*/
 		int	fsgid;		/* fs    group identification 	*/
-		int	jid;		/* jail process identification 	*/
 		int	nthr;		/* number of threads in tgroup 	*/
 		char	name[PNAMLEN+1];/* process name string       	*/
 		char 	isproc;		/* boolean: process level?      */
@@ -56,7 +55,11 @@ struct tstat {
 		int	nthrslpi;	/* # threads in state 'S'       */
 		int	nthrslpu;	/* # threads in state 'D'       */
 		int	nthrrun;	/* # threads in state 'R'       */
-		int	ifuture[4];     /* reserved                     */
+
+		int	ctid;		/* OpenVZ container ID		*/
+		int	vpid;		/* OpenVZ virtual PID		*/
+
+		int	ifuture[5];     /* reserved                     */
 	} gen;
 
 	/* CPU STATISTICS						*/
@@ -91,12 +94,14 @@ struct tstat {
 		count_t	vexec;		/* virtmem execfile (Kb)        */
 		count_t	vmem;		/* virtual  memory  (Kb)	*/
 		count_t	rmem;		/* resident memory  (Kb)	*/
+		count_t	pmem;		/* resident memory  (Kb)	*/
 		count_t vgrow;		/* virtual  growth  (Kb)    	*/
 		count_t rgrow;		/* resident growth  (Kb)     	*/
 		count_t vdata;		/* virtmem data     (Kb)     	*/
 		count_t vstack;		/* virtmem stack    (Kb)     	*/
 		count_t vlibs;		/* virtmem libexec  (Kb)     	*/
 		count_t vswap;		/* swap space used  (Kb)     	*/
+		count_t	cfuture[4];	/* reserved for future use	*/
 	} mem;
 
 	/* NETWORK STATISTICS						*/
@@ -138,7 +143,7 @@ int		pdb_srchresidue(struct tstat *, struct pinfo **);
 */
 struct netpertask;
 
-int		deviatproc(struct tstat *, int, struct tstat *, int, int,
+int		deviattask(struct tstat *, int, struct tstat *, int, int,
 				struct tstat *, struct sstat *, unsigned int *,
 				int *, int *, int *, int *, int *);
 

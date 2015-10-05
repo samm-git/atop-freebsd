@@ -274,9 +274,7 @@ static const char rcsid[] = "$Id: showlinux.c,v 1.70 2010/10/23 14:04:12 gerlof 
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#ifdef linux
- #include <termio.h>
-#endif
+#include <termio.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <curses.h>
@@ -371,6 +369,11 @@ sys_printdef *memsyspdefs[] = {
 	&syspdef_SHMEM,
 	&syspdef_SHMRSS,
 	&syspdef_SHMSWP,
+	&syspdef_BLANKBOX,
+	&syspdef_VMWBAL,
+	&syspdef_BLANKBOX,
+	&syspdef_HUPTOT,
+	&syspdef_HUPUSE,
         0
 };
 sys_printdef *swpsyspdefs[] = {
@@ -390,6 +393,14 @@ sys_printdef *pagsyspdefs[] = {
 	&syspdef_BLANKBOX,
         0
 };
+sys_printdef *contsyspdefs[] = {
+	&syspdef_CONTNAME,
+	&syspdef_CONTNPROC,
+	&syspdef_CONTCPU,
+	&syspdef_CONTMEM,
+	&syspdef_BLANKBOX,
+	0
+};
 sys_printdef *dsksyspdefs[] = {
 	&syspdef_DSKNAME,
 	&syspdef_DSKBUSY,
@@ -401,6 +412,46 @@ sys_printdef *dsksyspdefs[] = {
 	&syspdef_DSKKBPERRD,
 	&syspdef_DSKAVQUEUE,
 	&syspdef_DSKAVIO,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *nfsmntsyspdefs[] = {
+	&syspdef_NFMPATH,
+	&syspdef_NFMSERVER,
+	&syspdef_NFMTOTREAD,
+	&syspdef_NFMTOTWRITE,
+	&syspdef_NFMNREAD,
+	&syspdef_NFMNWRITE,
+	&syspdef_NFMDREAD,
+	&syspdef_NFMDWRITE,
+	&syspdef_NFMMREAD,
+	&syspdef_NFMMWRITE,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *nfcsyspdefs[] = {
+	&syspdef_NFCRPCCNT,
+	&syspdef_NFCRPCREAD,
+	&syspdef_NFCRPCWRITE,
+	&syspdef_NFCRPCRET,
+	&syspdef_NFCRPCARF,
+	&syspdef_BLANKBOX,
+        0
+};
+sys_printdef *nfssyspdefs[] = {
+	&syspdef_NFSRPCCNT,
+	&syspdef_NFSRPCREAD,
+	&syspdef_NFSRPCWRITE,
+	&syspdef_NFSNRBYTES,
+	&syspdef_NFSNWBYTES,
+	&syspdef_NFSNETTCP,
+	&syspdef_NFSNETUDP,
+	&syspdef_NFSBADFMT,
+	&syspdef_NFSBADAUT,
+	&syspdef_NFSBADCLN,
+	&syspdef_NFSRCHITS,
+	&syspdef_NFSRCMISS,
+	&syspdef_NFSRCNOCA,
 	&syspdef_BLANKBOX,
         0
 };
@@ -433,6 +484,7 @@ sys_printdef *netnetsyspdefs[] = {
 };
 sys_printdef *netintfsyspdefs[] = {
 	&syspdef_NETNAME,
+	&syspdef_NETSPEEDMAX,
 	&syspdef_NETPCKI,
 	&syspdef_NETPCKO,
 	&syspdef_NETSPEEDIN,
@@ -455,7 +507,6 @@ proc_printdef *allprocpdefs[]=
 	&procprt_PID,
 	&procprt_TID,
 	&procprt_PPID,
-	&procprt_JID,
 	&procprt_SYSCPU,
 	&procprt_USRCPU,
 	&procprt_VGROW,
@@ -465,6 +516,7 @@ proc_printdef *allprocpdefs[]=
 	&procprt_VSTEXT,
 	&procprt_VSIZE,
 	&procprt_RSIZE,
+	&procprt_PSIZE,
 	&procprt_VSLIBS,
 	&procprt_VDATA,
 	&procprt_VSTACK,
@@ -478,6 +530,8 @@ proc_printdef *allprocpdefs[]=
 	&procprt_EGID,
 	&procprt_SGID,
 	&procprt_FSGID,
+	&procprt_CTID,
+	&procprt_VPID,
 	&procprt_STDATE,
 	&procprt_STTIME,
 	&procprt_ENDATE,
@@ -547,10 +601,14 @@ sys_printpair cplline[MAXITEMS];
 sys_printpair memline[MAXITEMS];
 sys_printpair swpline[MAXITEMS];
 sys_printpair pagline[MAXITEMS];
+sys_printpair contline[MAXITEMS];
 sys_printpair dskline[MAXITEMS];
 sys_printpair nettransportline[MAXITEMS];
 sys_printpair netnetline[MAXITEMS];
 sys_printpair netinterfaceline[MAXITEMS];
+sys_printpair nfsmountline[MAXITEMS];
+sys_printpair nfcline[MAXITEMS];
+sys_printpair nfsline[MAXITEMS];
 
 typedef struct {
         const char *name;
@@ -562,13 +620,11 @@ typedef struct {
 ** example: input: "ABCD:3  EFG:1   QWE:16"
 **         output: { { "ABCD", 3 }, {"EFG", 1},  { "QWE", 16}, { 0, 0 }  }
 */
-name_prio *
-makeargv(char *line, const char *linename) 
+static void
+makeargv(char *line, const char *linename, name_prio *vec) 
 {
-        int i=0;
+        int   i=0;
         char *p=line;
-        static name_prio vec[MAXITEMS];    // max MAXITEMS items
-
         char *name=0;
         char *prio=0;
 
@@ -628,8 +684,6 @@ makeargv(char *line, const char *linename)
         }
                 
         vec[i].name=0;
-        return vec;
-
 }
 
 
@@ -641,13 +695,13 @@ void
 make_sys_prints(sys_printpair *ar, int maxn, const char *pairs, 
                 sys_printdef *permissables[], const char *linename)
 {
-        name_prio *items;
+        name_prio items[MAXITEMS];
         int n=strlen(pairs);
 
         char str[n+1];
         strcpy(str, pairs);
 
-        items=makeargv(str, linename);
+        makeargv(str, linename, items);
 
         int i;
         for(i=0; items[i].name && i<maxn-1; ++i) 
@@ -684,13 +738,13 @@ void
 make_proc_prints(proc_printpair *ar, int maxn, const char *pairs, 
 const char *linename)
 {
-        name_prio *items;
+        name_prio items[MAXITEMS];
         int n=strlen(pairs);
 
         char str[n+1];
         strcpy(str, pairs);
 
-        items=makeargv(str, linename);
+        makeargv(str, linename, items);
 
         int i;
         for(i=0; items[i].name && i<maxn-1; ++i) 
@@ -736,8 +790,7 @@ totalcap(struct syscap *psc, struct sstat *sstat,
                           sstat->cpu.all.wtime +
                           sstat->cpu.all.Itime +
                           sstat->cpu.all.Stime +
-                          sstat->cpu.all.steal +
-                          sstat->cpu.all.guest;
+                          sstat->cpu.all.steal;
 
         psc->availmem   = sstat->mem.physmem * pagesize/1024;
 
@@ -795,7 +848,7 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
                         "PRCNZOMBIE:5 "
                         "PRCCLONES:4 "
 	                "BLANKBOX:0 "
-                        "PRCNNEXIT:6", prcsyspdefs, "built in sysprcline");
+                        "PRCNNEXIT:6", prcsyspdefs, "builtin sysprcline");
                 }
                 if (allcpuline[0].f == 0)
                 {
@@ -810,7 +863,7 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
                         "CPUSTEAL:2 "
                         "CPUGUEST:3 "
                         "CPUFREQ:4 "
-                        "CPUSCALE:4 ", cpusyspdefs, "built in allcpuline");
+                        "CPUSCALE:4 ", cpusyspdefs, "builtin allcpuline");
                 }
 
                 if (indivcpuline[0].f == 0)
@@ -826,7 +879,7 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
                         "CPUISTEAL:2 "
                         "CPUIGUEST:3 "
                         "CPUIFREQ:4 "
-                        "CPUISCALE:4 ", cpisyspdefs, "built in indivcpuline");
+                        "CPUISCALE:4 ", cpisyspdefs, "builtin indivcpuline");
                 }
 
                 if (cplline[0].f == 0)
@@ -839,7 +892,7 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
 	                "CPLCSW:6 "
 	                "CPLINTR:5 "
 	                "BLANKBOX:0 "
-	                "CPLNUMCPU:1", cplsyspdefs, "built in cplline");
+	                "CPLNUMCPU:1", cplsyspdefs, "builtin cplline");
                 }
 
                 if (memline[0].f == 0)
@@ -856,7 +909,11 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
 	                "SHMEM:4 "
 	                "SHMRSS:3 "
 	                "SHMSWP:1 "
-	                "BLANKBOX:0", memsyspdefs, "built in memline");
+	                "BLANKBOX:0 "
+	                "VMWBAL:4 "
+	                "BLANKBOX:0 "
+	                "HUPTOT:4 "
+	                "HUPUSE:3 ", memsyspdefs, "builtin memline");
                 }
                 if (swpline[0].f == 0)
                 {
@@ -870,7 +927,7 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
 	                "BLANKBOX:0 "
 	                "BLANKBOX:0 "
 	                "SWPCOMMITTED:5 "
-	                "SWPCOMMITLIM:6", swpsyspdefs, "built in swpline");
+	                "SWPCOMMITLIM:6", swpsyspdefs, "builtin swpline");
                 }
                 if (pagline[0].f == 0)
                 {
@@ -884,7 +941,17 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
 	                "BLANKBOX:0 "
 	                "BLANKBOX:0 "
 	                "PAGSWIN:3 "
-	                "PAGSWOUT:4", pagsyspdefs, "built in pagline");
+	                "PAGSWOUT:4", pagsyspdefs, "builtin pagline");
+                }
+                if (contline[0].f == 0)
+                {
+                    make_sys_prints(contline, MAXITEMS,
+	                "CONTNAME:8 "
+	                "CONTNPROC:7 "
+	                "CONTCPU:6 "
+	                "CONTMEM:6 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 ", contsyspdefs, "builtin contline");
                 }
                 if (dskline[0].f == 0)
                 {
@@ -898,8 +965,62 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
                         "DSKMBPERSECRD:5 "
                         "DSKMBPERSECWR:5 "
 	                "DSKAVQUEUE:1 "
-	                "DSKAVIO:5", dsksyspdefs, "built in dskline");
+	                "DSKAVIO:5", dsksyspdefs, "builtin dskline");
                 }
+                if (nfsmountline[0].f == 0)
+                {
+                    make_sys_prints(nfsmountline, MAXITEMS,
+	                "NFMPATH:8 "
+	                "NFMSERVER:8 "
+			"NFMTOTREAD:8 "
+			"NFMTOTWRITE:8 "
+	                "BLANKBOX:0 "
+			"NFMNREAD:7 "
+			"NFMNWRITE:6 "
+	                "BLANKBOX:0 "
+			"NFMDREAD:5 "
+			"NFMDWRITE:4 "
+	                "BLANKBOX:0 "
+			"NFMMREAD:3 "
+			"NFMMWRITE:2 "
+	                "BLANKBOX:0 "
+                        "BLANKBOX:0", nfsmntsyspdefs, "builtin nfsmountline");
+                }
+                if (nfcline[0].f == 0)
+                {
+                    make_sys_prints(nfcline, MAXITEMS,
+	                "NFCRPCCNT:8 "
+	                "NFCRPCREAD:7 "
+	                "NFCRPCWRITE:7 "
+	                "NFCRPCRET:5 "
+	                "NFCRPCARF:5 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 "
+	                "BLANKBOX:0 ", nfcsyspdefs, "builtin nfcline");
+		}
+                if (nfsline[0].f == 0)
+                {
+                    make_sys_prints(nfsline, MAXITEMS,
+	                "NFSRPCCNT:8 "
+	                "NFSRPCREAD:6 "
+	                "NFSRPCWRITE:6 "
+	                "BLANKBOX:0 "
+	                "NFSNRBYTES:7 "
+	                "NFSNWBYTES:7 "
+	                "BLANKBOX:0 "
+	                "NFSNETTCP:5 "
+	                "NFSNETUDP:5 "
+	                "BLANKBOX:0 "
+	                "NFSRCHITS:3 "
+	                "NFSRCMISS:2 "
+	                "NFSRCNOCA:1 "
+	                "BLANKBOX:0 "
+	                "NFSBADFMT:4 "
+	                "NFSBADAUT:4 "
+	                "NFSBADCLN:4 ", nfssyspdefs, "builtin nfsline");
+		}
                 if (nettransportline[0].f == 0)
                 {
                     make_sys_prints(nettransportline, MAXITEMS,
@@ -914,7 +1035,7 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
                         "NETTCPINERR:3 "
                         "NETTCPORESET:2 "
                         "NETUDPNOPORT:1 "
-                        "NETUDPINERR:3", nettranssyspdefs, "built in nettransportline");
+                        "NETUDPINERR:3", nettranssyspdefs, "builtin nettransportline");
                 }
                 if (netnetline[0].f == 0)
                 {
@@ -928,22 +1049,26 @@ pricumproc(struct sstat *sstat, struct tstat **proclist,
 	                "BLANKBOX:0 "
 	                "BLANKBOX:0 "
                         "NETICMPIN:1 "
-                        "NETICMPOUT:1 ", netnetsyspdefs, "built in netnetline");
+                        "NETICMPOUT:1 ", netnetsyspdefs, "builtin netnetline");
                 }
                 if (netinterfaceline[0].f == 0)
                 {
                     make_sys_prints(netinterfaceline, MAXITEMS,
 	                "NETNAME:8 "
+	                "NETSPEEDMAX:5 "
+	                "BLANKBOX:0 "
 	                "NETPCKI:7 "
 	                "NETPCKO:7 "
+	                "BLANKBOX:0 "
 	                "NETSPEEDIN:6 "
 	                "NETSPEEDOUT:6 "
-                        "NETCOLLIS:3 "
+	                "BLANKBOX:0 "
+                        "NETCOLLIS:2 "
                         "NETMULTICASTIN:2 "
-                        "NETRCVERR:5 "
-                        "NETSNDERR:5 "
-                        "NETRCVDROP:4 "
-                        "NETSNDDROP:4", netintfsyspdefs, "built in netinterfaceline");
+                        "NETRCVERR:4 "
+                        "NETSNDERR:4 "
+                        "NETRCVDROP:3 "
+                        "NETSNDDROP:3", netintfsyspdefs, "builtin netinterfaceline");
                 }
         }  // firsttime
 
@@ -992,14 +1117,14 @@ priphead(int curlist, int totlist, char *showtype, char *showorder,
         {
                 make_proc_prints(memprocs, MAXITEMS, 
                         "PID:10 TID:3 MINFLT:2 MAJFLT:2 VSTEXT:4 VSLIBS:4 "
-			"VDATA:4 VSTACK:4 VSIZE:6 RSIZE:7 "
+			"VDATA:4 VSTACK:4 VSIZE:6 RSIZE:7 PSIZE:5 "
                         "VGROW:7 RGROW:8 SWAPSZ:5 RUID:1 EUID:0 "
                         "SORTITEM:9 CMD:10", 
                         "built-in memprocs");
 
                 make_proc_prints(schedprocs, MAXITEMS, 
-                        "PID:10 TID:6 TRUN:7 TSLPI:7 TSLPU:7 POLI:8 "
-                        "NICE:9 PRI:9 RTPR:9 CPUNR:8 ST:8 EXC:8 "
+                        "PID:10 TID:6 VPID:5 CTID:5 TRUN:7 TSLPI:7 TSLPU:7 "
+			"POLI:8 NICE:9 PRI:9 RTPR:9 CPUNR:8 ST:8 EXC:8 "
                         "S:8 SORTITEM:10 CMD:10", 
                         "built-in schedprocs");
 
@@ -1017,35 +1142,28 @@ priphead(int curlist, int totlist, char *showtype, char *showorder,
                         "SORTITEM:10 CMD:10", 
                         "built-in netprocs");
 
-#ifdef linux
                 make_proc_prints(varprocs, MAXITEMS,
-                        "PID:10 TID:4 PPID:9 RUID:8 RGID:8 EUID:5 EGID:4 "
+                        "PID:10 TID:4 PPID:9 VPID:1 CTID:1 "
+			"RUID:8 RGID:8 EUID:5 EGID:4 "
      			"SUID:3 SGID:2 FSUID:3 FSGID:2 "
                         "STDATE:7 STTIME:7 ENDATE:5 ENTIME:5 "
 			"ST:6 EXC:6 S:6 SORTITEM:10 CMD:10", 
                         "built-in varprocs");
-#elif defined(FREEBSD)
-                 make_proc_prints(varprocs, MAXITEMS,
-                         "PID:10 TID:4 RUID:8 RGID:8 EUID:5 EGID:4 "
-      			"SUID:3 SGID:2 JID:3 "
-                         "STDATE:7 STTIME:7 ENDATE:5 ENTIME:5 "
- 			"ST:6 EXC:6 S:6 SORTITEM:10 CMD:10", 
-                         "built-in varprocs");
-#endif
+
                 make_proc_prints(cmdprocs, MAXITEMS,
                         "PID:10 TID:4 S:8 SORTITEM:10 COMMAND-LINE:10", 
                         "built-in cmdprocs");
 
                 make_proc_prints(totusers, MAXITEMS, 
-                        "NPROCS:10 SYSCPU:9 USRCPU:9 VSIZE:8 "
-                        "RSIZE:8 SWAPSZ:5 RDDSK:7 CWRDSK:7 RNET:6 SNET:6 "
-                        "SORTITEM:10 RUID:10", 
+                        "NPROCS:10 SYSCPU:9 USRCPU:9 VSIZE:6 "
+                        "RSIZE:8 PSIZE:8 SWAPSZ:5 RDDSK:7 CWRDSK:7 "
+			"RNET:6 SNET:6 SORTITEM:10 RUID:10", 
                         "built-in totusers");
 
                 make_proc_prints(totprocs, MAXITEMS, 
-                        "NPROCS:10 SYSCPU:9 USRCPU:9 VSIZE:8 SWAPSZ:5 "
-                        "RSIZE:8 RDDSK:7 CWRDSK:7 RNET:6 SNET:6" 
-                        "SORTITEM:10 CMD:10", 
+                        "NPROCS:10 SYSCPU:9 USRCPU:9 VSIZE:6 "
+                        "RSIZE:8 PSIZE:8 SWAPSZ:5 RDDSK:7 CWRDSK:7 "
+			"RNET:6 SNET:6 SORTITEM:10 CMD:10", 
                         "built-in totprocs");
         }
 
@@ -1327,7 +1445,7 @@ int
 prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
         int fixedhead, struct sselection *selp, char *highorderp,
         int maxcpulines, int maxdsklines, int maxmddlines,
-	int maxlvmlines, int maxintlines)
+	int maxlvmlines, int maxintlines, int maxnfslines, int maxcontlines)
 {
         extraparam      extra;
         int             lin;
@@ -1343,8 +1461,7 @@ prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
         extra.cputot = sstat->cpu.all.stime + sstat->cpu.all.utime +
                        sstat->cpu.all.ntime + sstat->cpu.all.itime +
                        sstat->cpu.all.wtime + sstat->cpu.all.Itime +
-                       sstat->cpu.all.Stime + sstat->cpu.all.steal +
-                       sstat->cpu.all.guest;
+                       sstat->cpu.all.Stime + sstat->cpu.all.steal;
 
         busy   = (extra.cputot - sstat->cpu.all.itime - sstat->cpu.all.wtime)
                                 * 100.0 / extra.cputot;
@@ -1387,8 +1504,7 @@ prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
                                      sstat->cpu.cpu[extra.index].wtime +
                                      sstat->cpu.cpu[extra.index].Itime +
                                      sstat->cpu.cpu[extra.index].Stime +
-                                     sstat->cpu.cpu[extra.index].steal +
-                                     sstat->cpu.cpu[extra.index].guest;
+                                     sstat->cpu.cpu[extra.index].steal;
 
                         if (extra.percputot ==
 				(sstat->cpu.cpu[extra.index].itime +
@@ -1528,6 +1644,27 @@ prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
                 curline++;
         }
 
+	/*
+ 	** Container statistics (if any)
+	*/
+        for (extra.index=0, lin=0;
+	     extra.index < sstat->cfs.nrcontainer && lin < maxcontlines;
+             extra.index++)
+	{
+        	if (fixedhead             		||
+	            sstat->cfs.cont[extra.index].system	||
+	            sstat->cfs.cont[extra.index].user	||
+	            sstat->cfs.cont[extra.index].nice	  )
+		{
+			if (screen)
+                		move(curline, 0);
+
+                        showsysline(contline, sstat, &extra, "CON", 0);
+                        curline++;
+                        lin++;
+		}
+	}
+
         /*
         ** DISK statistics
         */
@@ -1543,6 +1680,53 @@ prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
 	pridisklike(&extra, sstat->dsk.dsk, "DSK", highorderp, maxdsklines,
 			&highbadness, &curline, fixedhead,
 			selp->dsknamesz ? &(selp->dskregex) : (void *) 0);
+
+        /*
+        ** NFS server and client statistics
+        */
+	for (extra.index=0, lin=0;
+	     extra.index < sstat->nfs.nfsmounts.nrmounts && lin < maxnfslines;
+								extra.index++)
+	{
+		int i = extra.index;
+
+		if ( (sstat->nfs.nfsmounts.nfsmnt[i].bytesread     +
+		      sstat->nfs.nfsmounts.nfsmnt[i].byteswrite    +
+		      sstat->nfs.nfsmounts.nfsmnt[i].bytesdread    +
+		      sstat->nfs.nfsmounts.nfsmnt[i].bytesdwrite   +
+		      sstat->nfs.nfsmounts.nfsmnt[i].bytestotread  +
+		      sstat->nfs.nfsmounts.nfsmnt[i].bytestotwrite +
+		      sstat->nfs.nfsmounts.nfsmnt[i].pagesmread    +
+		      sstat->nfs.nfsmounts.nfsmnt[i].pagesmwrite    ) ||
+		      sstat->nfs.nfsmounts.nfsmnt[i].age < nsecs      ||
+		      fixedhead                                         )
+		{
+			if (screen)
+                		move(curline, 0);
+
+                        showsysline(nfsmountline, sstat, &extra, "NFM", 0);
+                        curline++;
+                        lin++;
+		}
+	}
+
+        if (sstat->nfs.client.rpccnt || fixedhead )
+        {
+		if (screen)
+                	move(curline, 0);
+
+                showsysline(nfcline, sstat, &extra, "NFC", 0);
+                curline++;
+        }
+
+        if (sstat->nfs.server.rpccnt || fixedhead )
+        {
+		if (screen)
+                	move(curline, 0);
+
+                showsysline(nfsline, sstat, &extra, "NFS", 0);
+                curline++;
+        }
 
         /*
         ** NET statistics
@@ -1631,6 +1815,7 @@ prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
 
 			if (screen)
                 		move(curline, 0);
+
                         showsysline(netinterfaceline, sstat, &extra, 
                                       			"NET", badness);
                         curline++;
@@ -1647,6 +1832,8 @@ prisyst(struct sstat *sstat, int curline, int nsecs, int avgval,
 #if     HTTPSTATS
         if (sstat->www.accesses > 1 || fixedhead )
         {
+		char format1[8], format2[8], format3[8], format4[8], format5[8];
+
 		if (screen)
                		move(curline, 0);
 
@@ -1699,12 +1886,10 @@ pridisklike(extraparam *ep, struct perdsk *dp, char *lp, char *highorderp,
 
                 ep->iotot =  ep->perdsk[ep->index].nread +
 		             ep->perdsk[ep->index].nwrite;
-#ifdef linux
+
                 busy        = (double)(ep->perdsk[ep->index].io_ms *
 						100.0 / ep->mstot);
-#elif defined(FREEBSD)
-                busy        = (double)ep->perdsk[ep->index].busy_pct;
-#endif
+
                 if (dskbadness)
                         badness = busy * 100 / dskbadness;
                 else
@@ -1860,10 +2045,10 @@ intfcompar(const void *a, const void *b)
         if (aspeed)
         {
                 if (aduplex)
-                        afactor = (arbyte > asbyte ? arbyte : asbyte) /
-                                                                (aspeed / 10);
+                        afactor = (arbyte > asbyte ? arbyte : asbyte) 
+                                                                * 10 / aspeed;
                 else
-                        afactor = (arbyte + asbyte) /           (aspeed / 10);
+                        afactor = (arbyte + asbyte)             * 10 / aspeed;
         }
 
         /*
@@ -1872,10 +2057,10 @@ intfcompar(const void *a, const void *b)
         if (bspeed)
         {
                 if (bduplex)
-                        bfactor = (brbyte > bsbyte ? brbyte : bsbyte) /
-                                                                (bspeed / 10);
+                        bfactor = (brbyte > bsbyte ? brbyte : bsbyte)
+                                                                * 10 / bspeed;
                 else
-                        bfactor = (brbyte + bsbyte) /           (bspeed / 10);
+                        bfactor = (brbyte + bsbyte)             * 10 / bspeed;
         }
 
         /*
@@ -1899,6 +2084,40 @@ intfcompar(const void *a, const void *b)
                 return -1;
         else
                 return  1;
+}
+
+int
+nfsmcompar(const void *a, const void *b)
+{
+        const struct pernfsmount *na = a;
+        const struct pernfsmount *nb = b;
+
+        register count_t aused = na->bytesread    + na->byteswrite    + 
+	                         na->bytesdread   + na->bytesdwrite   +
+	                         na->bytestotread + na->bytestotwrite +
+                                 na->pagesmread   + na->pagesmwrite;
+        register count_t bused = nb->bytesread    + nb->byteswrite    + 
+	                         nb->bytesdread   + nb->bytesdwrite   +
+	                         nb->bytestotread + nb->bytestotwrite +
+                                 nb->pagesmread   + nb->pagesmwrite;
+
+        if (aused < bused) return  1;
+        if (aused > bused) return -1;
+                           return  0;
+}
+
+int
+contcompar(const void *a, const void *b)
+{
+        const struct percontainer *ca = a;
+        const struct percontainer *cb = b;
+
+        register count_t aused = ca->system + ca->user + ca->nice;
+        register count_t bused = cb->system + cb->user + cb->nice;
+
+        if (aused < bused) return  1;
+        if (aused > bused) return -1;
+                           return  0;
 }
 
 /*

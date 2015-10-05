@@ -67,11 +67,7 @@ static const char rcsid[] = "$Id: procdbase.c,v 1.8 2010/04/23 12:19:35 gerlof E
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-#ifdef linux
- #include <malloc.h>
-#else /* it is ANSI standard */
- #include <stdlib.h>
-#endif
+#include <malloc.h>
 
 #include "atop.h"
 #include "photoproc.h"
@@ -136,7 +132,7 @@ pdb_gettask(int pid, char isproc, time_t btime, struct pinfo **pinfopp)
 
 			*pinfopp = pp;
 
-			return(1);
+			return 1;
 		}
 
 		pp = pp->phnext;
@@ -145,7 +141,7 @@ pdb_gettask(int pid, char isproc, time_t btime, struct pinfo **pinfopp)
 	/*
 	** end of list; PID not found
 	*/
-	return(0);
+	return 0;
 }
 
 /*
@@ -154,9 +150,8 @@ pdb_gettask(int pid, char isproc, time_t btime, struct pinfo **pinfopp)
 void
 pdb_addtask(int pid, struct pinfo *pinfop)
 {
-	if(!pid)
-	    return;
 	register int i	= pid&(NPHASH-1);
+
 	pinfop->phnext 	= phash[i];
 	phash[i] 	= pinfop;
 }
@@ -168,9 +163,6 @@ int
 pdb_deltask(int pid, char isproc)
 {
 	register struct pinfo	*pp, *ppp;
-	
-	if(!pid)
-	    return 0;
 
 	pp = phash[pid&(NPHASH-1)];	/* get proper hash bucket	*/
 
@@ -192,7 +184,7 @@ pdb_deltask(int pid, char isproc)
 		*/
 		free(pp);
 
-		return(1);
+		return 1;
 	}
 
 	/*
@@ -222,14 +214,14 @@ pdb_deltask(int pid, char isproc)
 			*/
 			free(pp);
 
-			return(1);
+			return 1;
 		}
 
 		ppp	= pp;
 		pp	= pp->phnext;
 	}
 
-	return(0);	/* PID not found */
+	return 0;	/* PID not found */
 }
 
 /*
@@ -278,7 +270,7 @@ pdb_makeresidue(void)
 	/*
 	** all entries chained in doubly-linked RESIDUE-list
 	*/
-	return(1);
+	return 1;
 }
 
 /*
@@ -306,7 +298,7 @@ pdb_cleanresidue(void)
 		pdb_deltask(pid, isproc);
 	}
 
-	return(1);
+	return 1;
 }
 
 /*
@@ -348,7 +340,7 @@ pdb_srchresidue(struct tstat *tstatp, struct pinfo **pinfopp)
 			if (btimediff == 0)	/* gotcha !! */
 			{
 				*pinfopp = pr;
-				return(1);
+				return 1;
 			}
 
 			if ((btimediff== -1 || btimediff== 1) && prmin== NULL)
@@ -365,8 +357,8 @@ pdb_srchresidue(struct tstat *tstatp, struct pinfo **pinfopp)
 	if (prmin)
 	{
 		*pinfopp = prmin;
-		return(1);
+		return 1;
 	}
 
-	return(0);	/* even not almost */
+	return 0;	/* even not almost */
 }
