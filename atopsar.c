@@ -87,7 +87,11 @@ struct pridef {
 	char    *cntcat;        /* used categories of counters            */
 	char    flag;           /* flag on command line                   */
 	void    (*prihead)();   /* print header of list                   */
-	int     (*priline)();   /* print counters per line (excl. time)   */
+	int     (*priline)(struct sstat *, struct tstat *, struct tstat **,
+		           int, time_t, time_t, time_t,
+		           int, int, int, char *,
+        	           int, int, int, int, int, int);
+		                /* print counters per line (excl. time)   */
 	char    *about;         /* statistics about what                  */
 };
 
@@ -233,6 +237,8 @@ atopsar(int argc, char *argv[])
 			}
 		}
 
+		free(flaglist);
+
 		/*
 		** get optional interval-value and
 		** optional number of samples	
@@ -364,7 +370,8 @@ atopsar(int argc, char *argv[])
 	** during heavy CPU load);
 	** ignored if not running under superuser privileges!
 	*/
-	nice(-20);
+	if ( nice(-20) == -1)
+		;
 	/*
 	** determine properties (like speed) of all interfaces
 	*/
@@ -470,7 +477,8 @@ engine(void)
 
 		photosyst(cursstat);	/* obtain new counters      */
 
-		deviatsyst(cursstat, presstat, devsstat);
+		deviatsyst(cursstat, presstat, devsstat,
+				 curtime-pretime > 0 ? curtime-pretime : 1);
 
 		/*
 		** activate the report-function to visualize the deviations
@@ -514,10 +522,12 @@ reportlive(time_t curtime, int numsecs, struct sstat *ss)
 			/*
 			** print header-line
 			*/
+			printf("\n");
+
 			if (usecolors)
 				printf(COLSETHEAD);
 
-			printf("\n%s  ", convtime(curtime-numsecs, timebuf));
+			printf("%s  ", convtime(curtime-numsecs, timebuf));
 	
 			(pridef[i].prihead)(osvers, osrel, ossub);
 	
@@ -531,7 +541,7 @@ reportlive(time_t curtime, int numsecs, struct sstat *ss)
 			*/
 			printf("%s  ", convtime(curtime, timebuf));
 	
-			if ( !(pridef[i].priline)(ss, (struct tstat *)0, 0,
+			if ( !(pridef[i].priline)(ss, (struct tstat *)0, 0, 0,
 				numsecs, numsecs*hertz, hertz,
 				osvers, osrel, ossub,
 				stampalways ? timebuf : "        ",
@@ -577,10 +587,12 @@ reportlive(time_t curtime, int numsecs, struct sstat *ss)
 			/*
 			** print header-line
 			*/
+			printf("\n");
+
 			if (usecolors)
 				printf(COLSETHEAD);
 
-			printf("\n%s  ", convtime(curtime, timebuf));
+			printf("%s  ", convtime(curtime, timebuf));
 	
 			(pridef[i].prihead)(osvers, osrel, ossub);
 
@@ -600,7 +612,7 @@ reportlive(time_t curtime, int numsecs, struct sstat *ss)
 		*/
 		printf("%s  ", convtime(curtime, timebuf));
 	
-		if ( !(rv = (pridef[i].priline)(ss, (struct tstat *)0, 0,
+		if ( !(rv = (pridef[i].priline)(ss, (struct tstat *)0, 0, 0,
 					numsecs, numsecs*hertz, hertz,
 					osvers, osrel, ossub, 
 		                        stampalways ? timebuf : "        ",
@@ -622,10 +634,12 @@ reportlive(time_t curtime, int numsecs, struct sstat *ss)
 			/*
 			** print header-line
 			*/
+			printf("\n");
+
 			if (usecolors)
 				printf(COLSETHEAD);
 
-			printf("\n%s  ", convtime(curtime, timebuf));
+			printf("%s  ", convtime(curtime, timebuf));
 	
 			(pridef[i].prihead)(osvers, osrel, ossub);
 
@@ -716,10 +730,12 @@ reportraw(time_t curtime, int numsecs,
 		/*
 		** print header-line
 		*/
+		printf("\n");
+
 		if (usecolors)
 			printf(COLSETHEAD);
 
-		printf("\n%s  ", convtime(pretime, timebuf));
+		printf("%s  ", convtime(pretime, timebuf));
 
 		(pridef[prinow].prihead)(osvers, osrel, ossub);
 
@@ -746,7 +762,7 @@ reportraw(time_t curtime, int numsecs,
 			printf("%s  ", convtime(lasttime, timebuf));
 
 			rv = (pridef[prinow].priline)(&totsyst,
-				(struct tstat *)0, 0,
+				(struct tstat *)0, 0, 0,
 				totalsec, totalsec*hertz, hertz,
 			        osvers, osrel, ossub,
 		                stampalways ? timebuf : "        ",
@@ -855,7 +871,7 @@ reportraw(time_t curtime, int numsecs,
 			printf("%s  ", convtime(curtime, timebuf));
 
 			rv = (pridef[prinow].priline) (&totsyst,
-					(struct tstat *)0, 0,
+					(struct tstat *)0, 0, 0,
 					totalsec, totalsec*hertz, hertz,
 					osvers, osrel, ossub,
 					stampalways ? timebuf : "        ",
@@ -975,6 +991,12 @@ pratopsaruse(char *myname)
 	for (i=0; i < pricnt; i++)
 		fprintf(stderr,
 		"\t  -%c  %s\n", pridef[i].flag, pridef[i].about);
+
+	fprintf(stderr, "\n");
+	fprintf(stderr,
+                "Please refer to the man-page of 'atopsar' "
+	        "for more details.\n");
+
 
 	cleanstop(1);
 }
@@ -1148,8 +1170,7 @@ cpuline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
         cputot = ss->cpu.all.stime + ss->cpu.all.utime +
                  ss->cpu.all.ntime + ss->cpu.all.itime +
                  ss->cpu.all.wtime + ss->cpu.all.Itime +
-                 ss->cpu.all.Stime + ss->cpu.all.steal +
-                 ss->cpu.all.guest;
+                 ss->cpu.all.Stime + ss->cpu.all.steal;
 
 	if (cputot == 0)
 		cputot = 1;	/* avoid divide-by-zero */
@@ -1185,8 +1206,7 @@ cpuline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
         		cputot = ss->cpu.cpu[i].stime + ss->cpu.cpu[i].utime +
                  	         ss->cpu.cpu[i].ntime + ss->cpu.cpu[i].itime +
                  	         ss->cpu.cpu[i].wtime + ss->cpu.cpu[i].Itime +
-                 	         ss->cpu.cpu[i].Stime + ss->cpu.cpu[i].steal +
-                 	         ss->cpu.cpu[i].guest;
+                 	         ss->cpu.cpu[i].Stime + ss->cpu.cpu[i].steal;
 
 			if (cputot == 0)
 				cputot = 1;	/* avoid divide-by-zero */
@@ -1275,14 +1295,14 @@ taskline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 		printf("%8.2lf %7.2lf  %7d %7d    %6d %7d %7d\n",
 			(double)ss->cpu.nprocs / deltasec,
 			(double)pexit          / deltasec,
-			ppres, pzombie, ntrun, ntslpi, ntslpu);
+			nactproc-pexit, pzombie, ntrun, ntslpi, ntslpu);
 	}
 	else
 	{
 		printf("%8.2lf %7.2lf  %7d %7d\n",
 			(double)ss->cpu.nprocs / deltasec,
 			(double)pexit          / deltasec,
-			ppres, pzombie);
+			nactproc-pexit, pzombie);
 	}
 
 	return 1;
@@ -1294,13 +1314,8 @@ taskline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 static void
 memhead(int osvers, int osrel, int ossub)
 {
-#ifdef linux
 	printf("memtotal memfree buffers cached dirty slabmem"
 	       "  swptotal swpfree _mem_"             );
-#elif defined(FREEBSD)
-	printf("memtotal memfree wired   cached inact active "
-	       "  swptotal swpfree _mem_"             );
-#endif
 }
 
 static int
@@ -1449,13 +1464,11 @@ gendskline(struct sstat *ss, char *tstamp, char selector)
         mstot  = (ss->cpu.all.stime + ss->cpu.all.utime +
                   ss->cpu.all.ntime + ss->cpu.all.itime +
                   ss->cpu.all.wtime + ss->cpu.all.Itime +
-                  ss->cpu.all.Stime + ss->cpu.all.steal +
-                  ss->cpu.all.guest                      )
+                  ss->cpu.all.Stime + ss->cpu.all.steal  )
 				* (count_t)1000 / hertz / ss->cpu.nrcpu;
 
 	for (i=0; i < nunit; i++, dp++)
 	{
-		char	buf[32];
 		char	*pn;
 		int	len;
 
@@ -1469,13 +1482,8 @@ gendskline(struct sstat *ss, char *tstamp, char selector)
 		if (nlines++)
 			printf("%s  ", tstamp);
 
-
 		if (dskbadness)
-#ifdef linux		
 			badness = (dp->io_ms * 100.0 / mstot) * 100/dskbadness;
-#elif defined(FREEBSD)
-			badness = dp->busy_pct * 100/dskbadness;
-#endif
                 else
 			badness = 0;
 
@@ -1485,8 +1493,7 @@ gendskline(struct sstat *ss, char *tstamp, char selector)
 			pn = dp->name + len - 14;
 		else
 			pn = dp->name;
-#ifdef linux
-        sprintf(buf, "%12.12s", pn);
+
 		printf("%-14s %3.0lf%% %6.1lf %7.1lf %7.1lf %7.1lf "
 		       "%5.1lf %6.2lf ms",
 		    	pn,
@@ -1499,22 +1506,7 @@ gendskline(struct sstat *ss, char *tstamp, char selector)
   			        (double)dp->nwsect / dp->nwrite / 2.0 : 0.0,
 			dp->io_ms  ? (double)dp->avque / dp->io_ms    : 0.0,
 		      	iotot ? (double)dp->io_ms  / iotot            : 0.0);
-#elif defined(FREEBSD)
-/* 04:05:44  disk           busy read/s KB/read  writ/s KB/writ avque avserv _dsk_ */
-        sprintf(buf, "%12.12s", pn);
-		printf("%-14s %3.0lf%% %6.1lf %7.1lf %7.1lf %7.1lf "
-		       "%5.1lf %6.2lf ms",
-		    	pn,
-			(double)dp->busy_pct,
-			mstot ? (double)dp->nread  * 1000.0 / mstot   : 0.0,
-			dp->nread  ?
-			        (double)dp->nrsect / dp->nread / 2.0  : 0.0,
-			mstot ? (double)dp->nwrite * 1000.0 / mstot   : 0.0,
-			dp->nwrite ?
-  			        (double)dp->nwsect / dp->nwrite / 2.0 : 0.0,
-			(double)dp->avque,
-		      	(double)dp->io_ms/1000);
-#endif
+
 		postprint(badness);
 	}
 
@@ -1557,6 +1549,121 @@ dskline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 }
 
 /*
+** NFS client statistics
+*/
+static void
+nfmhead(int osvers, int osrel, int ossub)
+{
+	printf("mounted_device                          physread/s  physwrit/s"
+               "  _nfm_");
+}
+
+static int
+nfmline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
+        time_t deltasec, time_t deltatic, time_t hz,
+        int osvers, int osrel, int ossub, char *tstamp,
+        int ppres,  int ntrun, int ntslpi, int ntslpu, int pexit, int pzombie)
+{
+	static char	firstcall = 1;
+	register long	i, nlines = 0;
+	char		*pn, state;
+	int		len;
+
+	for (i=0; i < ss->nfs.nfsmounts.nrmounts; i++)	/* per NFS mount */
+	{
+		/*
+		** print for the first sample all mounts that
+		** are found; afterwards print only the mounts
+		** that were really active during the interval
+		*/
+		if (firstcall                                  ||
+		    allresources                               ||
+		    ss->nfs.nfsmounts.nfsmnt[i].age < deltasec ||
+		    ss->nfs.nfsmounts.nfsmnt[i].bytestotread   ||
+		    ss->nfs.nfsmounts.nfsmnt[i].bytestotwrite    )
+		{
+			if (nlines++)
+				printf("%s  ", tstamp);
+
+			if ( (len = strlen(ss->nfs.nfsmounts.nfsmnt[i].mountdev)) > 38)
+				pn = ss->nfs.nfsmounts.nfsmnt[i].mountdev + len - 38;
+			else
+				pn = ss->nfs.nfsmounts.nfsmnt[i].mountdev;
+
+		    	if (ss->nfs.nfsmounts.nfsmnt[i].age < deltasec)
+				state = 'M';
+			else
+				state = ' ';
+
+			printf("%-38s %10.3lfK %10.3lfK    %c\n", 
+			    pn,
+			    (double)ss->nfs.nfsmounts.nfsmnt[i].bytestotread  /
+								1024 / deltasec,
+			    (double)ss->nfs.nfsmounts.nfsmnt[i].bytestotwrite /
+								1024 / deltasec,
+			    state);
+		}
+	}
+
+	if (nlines == 0)
+	{
+		printf("\n");
+		nlines++;
+	}
+
+	firstcall= 0;
+	return nlines;
+}
+
+static void
+nfchead(int osvers, int osrel, int ossub)
+{
+	printf("     rpc/s   rpcread/s  rpcwrite/s  retrans/s  autrefresh/s   "
+               "  _nfc_");
+}
+
+static int
+nfcline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
+        time_t deltasec, time_t deltatic, time_t hz,
+        int osvers, int osrel, int ossub, char *tstamp,
+        int ppres,  int ntrun, int ntslpi, int ntslpu, int pexit, int pzombie)
+{
+	printf("%10.2lf  %10.2lf  %10.2lf %10.2lf  %12.2lf\n",
+		(double)ss->nfs.client.rpccnt        / deltasec,
+		(double)ss->nfs.client.rpcread       / deltasec,
+		(double)ss->nfs.client.rpcwrite      / deltasec,
+		(double)ss->nfs.client.rpcretrans    / deltasec,
+		(double)ss->nfs.client.rpcautrefresh / deltasec);
+
+	return 1;
+}
+
+static void
+nfshead(int osvers, int osrel, int ossub)
+{
+	printf("  rpc/s  rpcread/s rpcwrite/s MBcr/s  MBcw/s  "
+               "nettcp/s netudp/s _nfs_");
+}
+
+static int
+nfsline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
+        time_t deltasec, time_t deltatic, time_t hz,
+        int osvers, int osrel, int ossub, char *tstamp,
+        int ppres,  int ntrun, int ntslpi, int ntslpu, int pexit, int pzombie)
+{
+	printf("%7.2lf %10.2lf %10.2lf %6.2lf %7.2lf %9.2lf %8.2lf\n",
+		(double)ss->nfs.server.rpccnt    / deltasec,
+		(double)ss->nfs.server.rpcread   / deltasec,
+		(double)ss->nfs.server.rpcwrite  / deltasec,
+		(double)ss->nfs.server.nrbytes / 1024.0 / 1024.0 / deltasec,
+		(double)ss->nfs.server.nwbytes / 1024.0 / 1024.0 / deltasec,
+		(double)ss->nfs.server.nettcpcnt / deltasec,
+		(double)ss->nfs.server.netudpcnt / deltasec);
+
+	return 1;
+}
+
+/*
 ** network-interface statistics
 */
 static void
@@ -1577,6 +1684,8 @@ ifline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 	double		busy;
 	char		busyval[16], dupval;
 	unsigned int	badness;
+	char		*pn;
+	int		len;
 
 	for (i=0; i < ss->intf.nrintf; i++)	/* per interface */
 	{
@@ -1611,6 +1720,25 @@ ifline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 				busy = (ival + oval) * 100 /
 				        ss->intf.intf[i].speed;
 
+			// especially with wireless, the speed might have
+			// dropped temporarily to a very low value (snapshot)
+			// it might be better to take the speed of the
+			// previous sample
+			if (busy > 100 && ss->intf.intf[i].speed <
+			                  	ss->intf.intf[i].speedp )
+			{
+				ss->intf.intf[i].speed =
+					ss->intf.intf[i].speedp;
+
+				if (ss->intf.intf[i].duplex)
+					busy = (ival > oval ?
+						ival*100 : oval*100) /
+				        	ss->intf.intf[i].speed;
+				else
+					busy = (ival + oval) * 100 /
+				        	ss->intf.intf[i].speed;
+			}
+
 			snprintf(busyval, sizeof busyval,
 						"%3.0lf%%", busy);
 		}
@@ -1640,11 +1768,16 @@ ifline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 		else
 			badness = 0;
 
+		if ( (len = strlen(ss->intf.intf[i].name)) > 6)
+			pn = ss->intf.intf[i].name + len - 6;
+		else
+			pn = ss->intf.intf[i].name;
+
 		preprint(badness);
 
 		printf("%-6s %4s %7.1lf %7.1lf %8.0lf %8.0lf "
 		       "%5lld %5lld %7ld %c", 
-			ss->intf.intf[i].name, busyval,
+			pn, busyval,
 			(double)ss->intf.intf[i].rpack / deltasec,
 			(double)ss->intf.intf[i].spack / deltasec,
 			(double)ss->intf.intf[i].rbyte / 1024 / deltasec,
@@ -1680,6 +1813,8 @@ IFline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 {
 	static char	firstcall = 1;
 	register long	i, nlines = 0;
+	char		*pn;
+	int		len;
 
 	for (i=0; i < ss->intf.nrintf; i++)	/* per interface */
 	{
@@ -1695,9 +1830,14 @@ IFline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 		if (nlines++)
 			printf("%s  ", tstamp);
 
+		if ( (len = strlen(ss->intf.intf[i].name)) > 6)
+			pn = ss->intf.intf[i].name + len - 6;
+		else
+			pn = ss->intf.intf[i].name;
+
 		printf("%-6s %6.2lf %6.2lf %6.2lf %7.2lf %7.2lf "
 		       "%8.2lf %10.2lf\n", 
-			ss->intf.intf[i].name,
+			pn,
 			(double)ss->intf.intf[i].rerrs    / deltasec,
 			(double)ss->intf.intf[i].serrs    / deltasec,
 			(double)ss->intf.intf[i].scollis  / deltasec,
@@ -2084,8 +2224,7 @@ topcline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 	availcpu  = ss->cpu.all.stime + ss->cpu.all.utime +
 	            ss->cpu.all.ntime + ss->cpu.all.itime +
 	            ss->cpu.all.wtime + ss->cpu.all.Itime +
-		    ss->cpu.all.Stime + ss->cpu.all.steal +
-		    ss->cpu.all.guest; 
+		    ss->cpu.all.Stime + ss->cpu.all.steal;
 
 	availcpu /= ss->cpu.nrcpu;
 
@@ -2285,63 +2424,6 @@ topnline(struct sstat *ss, struct tstat *ts, struct tstat **ps, int nactproc,
 /*        If no flags are specified for 'atopsar', the first entry   */
 /*        in this table is defined active (default flag).            */
 /*                                                                   */
-/*     Column 2:                                                     */
-/*        Categories of counters used by this function.              */
-/*           c = cpu  counters,    m = memory  counters,             */
-/*           d = disk counters,    n = network counters              */
-/*                                                                   */
-/*     Column 3:                                                     */
-/*        Flag which can be used as command-line argument to         */
-/*        select the function defined in this table-entry. Be sure   */
-/*        that a unique character is choosen.                        */
-/*        Notice that certain flags are reserved!                    */
-/*                                                                   */
-/*     Column 4:                                                     */
-/*        Entry-point of the 'printhead' function.                   */
-/*                                                                   */
-/*     Column 5:                                                     */
-/*        Entry-point of the 'printline' function.                   */
-/*                                                                   */
-/*     Column 6:                                                     */
-/*        Information about the statistics shown by the function     */
-/*        specified by the table-entry. This text is printed as      */
-/*        command-usage.                                             */
-/*********************************************************************/
-struct pridef pridef[] =
-{
-   {0,  "c",  'c',  cpuhead,	cpuline,  	"cpu utilization",        },
-   {0,  "c",  'p',  prochead,	procline,  	"process(or) load",       },
-   {0,  "c",  'P',  taskhead,	taskline,  	"processes & threads",    },
-   {0,  "m",  'm',  memhead,	memline,	"memory & swapspace",     },
-   {0,  "m",  's',  swaphead,	swapline,	"swap rate",              },
-   {0,  "cd", 'l',  lvmhead,	lvmline,	"logical volume activity", },
-   {0,  "cd", 'f',  mddhead,	mddline,	"multiple device activity",},
-   {0,  "cd", 'd',  dskhead,	dskline,	"disk activity",          },
-   {0,  "n",  'i',  ifhead,	ifline,		"net-interf (general)",   },
-   {0,  "n",  'I',  IFhead,	IFline,		"net-interf (errors)",    },
-   {0,  "n",  'w',  ipv4head,	ipv4line,	"ip   v4    (general)",   },
-   {0,  "n",  'W',  IPv4head,	IPv4line,	"ip   v4    (errors)",    },
-   {0,  "n",  'y',  icmpv4head,	icmpv4line,	"icmp v4    (general)",   },
-   {0,  "n",  'Y',  ICMPv4head,	ICMPv4line,	"icmp v4    (per type)",  },
-   {0,  "n",  'u',  udpv4head,	udpv4line,  	"udp  v4",                },
-   {0,  "n",  'z',  ipv6head,	ipv6line,	"ip   v6    (general)",   },
-   {0,  "n",  'Z',  IPv6head,	IPv6line,	"ip   v6    (errors)",    },
-   {0,  "n",  'k',  icmpv6head,	icmpv6line,	"icmp v6    (general)",   },
-   {0,  "n",  'K',  ICMPv6head,	ICMPv6line,	"icmp v6    (per type)",  },
-   {0,  "n",  'U',  udpv6head,	udpv6line,  	"udp  v6",                },
-   {0,  "n",  't',  tcphead,	tcpline,  	"tcp        (general)",   },
-   {0,  "n",  'T',  TCPhead,	TCPline,  	"tcp        (errors)",    },
-#if	HTTPSTATS
-   {0,  "n",  'h',  httphead,	httpline,  	"HTTP activity",          },
-#endif
-   {0,  "",   'O',  topchead,	topcline,  	"top-3 processes cpu",    },
-   {0,  "",   'G',  topmhead,	topmline,  	"top-3 processes memory", },
-   {0,  "",   'D',  topdhead,	topdline,  	"top-3 processes disk",   },
-   {0,  "",   'N',  topnhead,	topnline,  	"top-3 processes network",},
-};
-
-int	pricnt = sizeof(pridef)/sizeof(struct pridef);
-                                  */
 /*     Column 2:                                                     */
 /*        Categories of counters used by this function.              */
 /*           c = cpu  counters,    m = memory  counters,             */
