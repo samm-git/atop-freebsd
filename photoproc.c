@@ -151,6 +151,10 @@ static const char rcsid[] = "$Id: photoproc.c,v 1.33 2010/04/23 12:19:35 gerlof 
  #include <sys/user.h>
  extern  kvm_t *kd;
  extern char	filterkernel;
+
+ #if __FreeBSD_version < 1100097
+  #define P_KPROC P_KTHREAD
+ #endif
 #endif
 
 #include "atop.h"
@@ -394,7 +398,7 @@ proccmd(struct tstat *curtask, struct kinfo_proc *pp){
 
 	// enable display of long kernel processes
 	if (!strlen(string) && 
-	    ((pp->ki_flag & P_SYSTEM ) || (pp->ki_flag & P_KTHREAD)))
+	    ((pp->ki_flag & P_SYSTEM ) || (pp->ki_flag & P_KPROC)))
 		/* kernel process, show with {name} */
 		snprintf(curtask->gen.cmdline, CMDLEN-1, "{%s}", pp->ki_comm);
 	else
@@ -461,7 +465,7 @@ photoproc(struct tstat *tasklist, int maxtask)
 	for (i = nproc; --i >= 0; ++pbase) {
 		
 		if(pbase->ki_pid)  {
-			if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KTHREAD)))
+			if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KPROC)))
 				continue;
 			
 			/*
@@ -574,7 +578,7 @@ countprocs(void)
 	pbase = kvm_getprocs(kd, KERN_PROC_ALL, 0, &nproc_all);
 	for (i = nproc_all; --i >= 0; ++pbase) {
 	    if(pbase->ki_pid)  {
-		if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KTHREAD))) 
+		if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KPROC))) 
 		    continue;
 		nr++;
 	    }
@@ -671,7 +675,7 @@ static int
 procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc, struct kinfo_proc *pp)
 {
 	if (isproc){
-		if ((pp->ki_flag & P_SYSTEM ) || (pp->ki_flag & P_KTHREAD))
+		if ((pp->ki_flag & P_SYSTEM ) || (pp->ki_flag & P_KPROC))
 			/* kernel process, show with {name} */
 			snprintf(curtask->gen.name,PNAMLEN-1, "{%s}", pp->ki_comm);
 		else
@@ -687,11 +691,11 @@ procstat(struct tstat *curtask, unsigned long long bootepoch, char isproc, struc
 	*/
 	switch (PRI_BASE(pp->ki_pri.pri_class)) {
 	    case PRI_REALTIME:
-	    curtask->cpu.rtprio = ((pp->ki_flag & P_KTHREAD) ? pp->ki_pri.pri_native :
+	    curtask->cpu.rtprio = ((pp->ki_flag & P_KPROC) ? pp->ki_pri.pri_native :
 		        pp->ki_pri.pri_user) - PRI_MIN_REALTIME;
 	    break;
 	    case PRI_IDLE:
-	    curtask->cpu.rtprio = ((pp->ki_flag & P_KTHREAD) ? pp->ki_pri.pri_native :
+	    curtask->cpu.rtprio = ((pp->ki_flag & P_KPROC) ? pp->ki_pri.pri_native :
 		        pp->ki_pri.pri_user) - PRI_MIN_IDLE;
 	    break;
 	    default: 
