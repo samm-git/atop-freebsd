@@ -249,9 +249,10 @@ rawwrite(time_t curtime, int numsecs,
 	int			rv;
 	struct stat		filestat;
 
-	Byte			scompbuf[sizeof(struct sstat)], *pcompbuf;
-	unsigned long		scomplen = sizeof scompbuf;
-	unsigned long		pcomplen = sizeof(struct tstat) * ndeviat;
+	Byte			*scompbuf, *pcompbuf;
+	uLong			soriglen = sizeof(struct sstat),
+				poriglen = sizeof(struct tstat) * ndeviat;
+	uLongf			scomplen, pcomplen;
 
 	/*
 	** first call:
@@ -269,19 +270,29 @@ rawwrite(time_t curtime, int numsecs,
 
 	/*
 	** compress system- and process-level statistics
+	**
+	** zlib requires the destination buffer to be at least
+	** compressBound() bytes, i.e. slightly larger than the
+	** uncompressed data.  Using the uncompressed size as the
+	** destination size makes compress() fail with Z_BUF_ERROR as
+	** soon as a sample does not compress.
 	*/
-	rv = compress(scompbuf, &scomplen,
-				(Byte *)ss, (unsigned long)sizeof *ss);
+	scomplen = compressBound(soriglen);
+	pcomplen = compressBound(poriglen);
 
-	testcompval(rv, "compress");
-
+	scompbuf = malloc(scomplen);
 	pcompbuf = malloc(pcomplen);
 
+	ptrverify(scompbuf, "Malloc failed for compression buffer\n");
 	ptrverify(pcompbuf, "Malloc failed for compression buffer\n");
 
-	rv = compress(pcompbuf, &pcomplen, (Byte *)ts, (unsigned long)pcomplen);
+	rv = compress(scompbuf, &scomplen, (Byte *)ss, soriglen);
 
-	testcompval(rv, "compress");
+	testcompval(rv, "compress system stats");
+
+	rv = compress(pcompbuf, &pcomplen, (Byte *)ts, poriglen);
+
+	testcompval(rv, "compress processes");
 
 	/*
 	** fill record header and write to file
@@ -347,6 +358,7 @@ rawwrite(time_t curtime, int numsecs,
 	}
 
 	free(pcompbuf);
+	free(scompbuf);
 
 	return '\0';
 }
