@@ -49,6 +49,11 @@ struct netpertask;
 #define RRNETATOP	0x0004
 #define RRNETATOPD	0x0008
 
+#include <sys/param.h>
+#if __FreeBSD_version > 1100116
+#define P_KTHREAD P_KPROC
+#endif
+
 struct visualize {
 	char	(*show_samp)  (time_t, int,
 	                struct sstat *, struct tstat *, struct tstat **,
