@@ -531,7 +531,8 @@ reportlive(time_t curtime, int numsecs, struct sstat *ss)
 			*/
 			printf("%s  ", convtime(curtime, timebuf));
 	
-			if ( !(pridef[i].priline)(ss, (struct tstat *)0, 0,
+			if ( !(pridef[i].priline)(ss, (struct tstat *)0,
+				(struct tstat **)0, 0,
 				numsecs, numsecs*hertz, hertz,
 				osvers, osrel, ossub,
 				stampalways ? timebuf : "        ",
@@ -600,7 +601,8 @@ reportlive(time_t curtime, int numsecs, struct sstat *ss)
 		*/
 		printf("%s  ", convtime(curtime, timebuf));
 	
-		if ( !(rv = (pridef[i].priline)(ss, (struct tstat *)0, 0,
+		if ( !(rv = (pridef[i].priline)(ss, (struct tstat *)0,
+					(struct tstat **)0, 0,
 					numsecs, numsecs*hertz, hertz,
 					osvers, osrel, ossub, 
 		                        stampalways ? timebuf : "        ",
@@ -746,7 +748,7 @@ reportraw(time_t curtime, int numsecs,
 			printf("%s  ", convtime(lasttime, timebuf));
 
 			rv = (pridef[prinow].priline)(&totsyst,
-				(struct tstat *)0, 0,
+				(struct tstat *)0, (struct tstat **)0, 0,
 				totalsec, totalsec*hertz, hertz,
 			        osvers, osrel, ossub,
 		                stampalways ? timebuf : "        ",
@@ -855,7 +857,7 @@ reportraw(time_t curtime, int numsecs,
 			printf("%s  ", convtime(curtime, timebuf));
 
 			rv = (pridef[prinow].priline) (&totsyst,
-					(struct tstat *)0, 0,
+					(struct tstat *)0, (struct tstat **)0, 0,
 					totalsec, totalsec*hertz, hertz,
 					osvers, osrel, ossub,
 					stampalways ? timebuf : "        ",

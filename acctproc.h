@@ -142,44 +142,14 @@ struct acct
 	__u32		ac_uid;			/* Real User ID */
 	__u32		ac_gid;			/* Real Group ID */
 };
-#elif defined(FREEBSD)
-// copied from acct.h, probably better not to do this
-struct acct {
-	uint8_t   ac_zero;		/* zero identifies new version */
-	uint8_t   ac_version;		/* record version number */
-	uint16_t  ac_len;		/* record length */
-
-	char	  ac_comm[AC_COMM_LEN];	/* command name */
-	float	  ac_utime;		/* user time */
-	float	  ac_stime;		/* system time */
-	float	  ac_etime;		/* elapsed time */
-	time_t	  ac_btime;		/* starting time */
-	uid_t	  ac_uid;		/* user id */
-	gid_t	  ac_gid;		/* group id */
-	float	  ac_mem;		/* average memory usage */
-	float	  ac_io;		/* count of IO blocks */
-	__dev_t   ac_tty;		/* controlling tty */
-
-	uint16_t  ac_len2;		/* record length */
-	union {
-		__dev_t	  ac_align;	/* force v1 compatible alignment */
-
-#define	AFORK	0x01			/* forked but not exec'ed */
-/* ASU is no longer supported */
-#define	ASU	0x02			/* used super-user permissions */
-#define	ACOMPAT	0x04			/* used compatibility mode */
-#define	ACORE	0x08			/* dumped core */
-#define	AXSIG	0x10			/* killed by a signal */
-#define ANVER	0x20			/* new record version */
-
-		uint8_t   ac_flag;	/* accounting flags */
-	} ac_trailer;
-
-#define ac_flagx ac_trailer.ac_flag
-};
-
-
 #endif
+
+/*
+** The FreeBSD accounting-record layouts (struct acctv1/acctv2/acctv3)
+** are provided by <sys/acct.h> and used directly, so no local
+** definitions are needed for FreeBSD.
+*/
+#ifdef linux
 struct acct_v3
 {
 	char		ac_flag;		/* Flags */
@@ -206,3 +176,4 @@ struct acct_v3
 	comp_t		ac_swaps;		/* Number of Swaps */
 	char		ac_comm[ACCT_COMM];	/* Command Name */
 };
+#endif
