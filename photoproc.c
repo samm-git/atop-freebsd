@@ -467,7 +467,10 @@ photoproc(struct tstat *tasklist, int maxtask)
 		if(pbase->ki_pid)  {
 			if (filterkernel && ((pbase->ki_flag & P_SYSTEM ) || (pbase->ki_flag & P_KPROC)))
 				continue;
-			
+
+			if (tval >= maxtask)	/* no room left in the task-list */
+				break;
+
 			/*
 			** gather process-level information
 			*/
@@ -487,7 +490,8 @@ photoproc(struct tstat *tasklist, int maxtask)
 				curtask = tasklist+tval;
 				procstat(curtask, bootepoch, is_proc, pbase);
 				proccmd(curtask, pbase);
-				if(curtask->gen.nthr > 1) { /* add main thread to the threads list */
+				if(curtask->gen.nthr > 1 && tval+1 < maxtask) {
+					/* add main thread to the threads list */
 					tval++;
 					curthr = tasklist+tval ;
 					procstat(curthr, bootepoch, 0, pbase);
@@ -528,7 +532,7 @@ photoproc(struct tstat *tasklist, int maxtask)
 			prev_curtask=curtask;
 			tval++;
 		}
-		if(tval == maxtask)  /* do not write more procs then allocated memory */
+		if(tval >= maxtask)  /* do not write more procs then allocated memory */
 			break;
 		
 	}
