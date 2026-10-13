@@ -417,6 +417,41 @@ acctswon(void)
 static int
 acctvers(int fd)
 {
+#ifdef FREEBSD
+	unsigned char	hdr[4];
+
+	/*
+	** FreeBSD accounting records identify themselves:
+	**   byte 0 : always zero for version 2/3, non-zero for legacy v1
+	**   byte 1 : version number
+	** Use the real layouts from <sys/acct.h> so that the record size
+	** and the interpretation of the fields match the kernel.
+	*/
+	if ( read(fd, hdr, sizeof hdr) < (ssize_t)sizeof hdr )
+		return 0;
+
+	if (hdr[0] != 0)		/* legacy version 1 */
+	{
+		acctrecsz     = sizeof(struct acctv1);
+		acctversion   = 1;
+	}
+	else switch (hdr[1] & 0x0f)
+	{
+	   case 2:
+		acctrecsz     = sizeof(struct acctv2);
+		acctversion   = 2;
+		break;
+
+	   case 3:
+		acctrecsz     = sizeof(struct acctv3);
+		acctversion   = 3;
+		break;
+
+	   default:
+		fprintf(stderr, "Unknown format of process accounting file\n");
+		cleanstop(8);
+	}
+#else
 	struct acct 	tmprec;
 
 	/*
@@ -442,6 +477,7 @@ acctvers(int fd)
 		fprintf(stderr, "Unknown format of process accounting file\n");
 		cleanstop(8);
 	}
+#endif
 
 	/*
 	** accounting successfully switched on
@@ -589,6 +625,53 @@ acctrepos(unsigned int noverflow)
 
 
 /*
+** fill a task-record for an exited process based on a FreeBSD
+** accounting-record; the time-arguments are supplied in seconds
+*/
+#ifdef FREEBSD
+static void
+acctfill_freebsd(struct tstat *api, const char *comm, size_t commlen,
+                 double utime, double stime, double etime,
+                 time_t btime, uid_t uid, gid_t gid,
+                 double mem, double io)
+{
+	memset(api, 0, sizeof *api);
+
+	api->gen.state  = 'E';
+	api->gen.nthr   = 1;
+	api->gen.isproc = 1;
+	api->gen.pid    = 0;
+	api->gen.tgid   = 0;
+	api->gen.ppid   = 0;
+	api->gen.excode = 0;
+
+	api->gen.ruid   = uid;
+	api->gen.euid   = uid;
+	api->gen.suid   = uid;
+	api->gen.rgid   = gid;
+	api->gen.egid   = gid;
+	api->gen.sgid   = gid;
+
+	api->gen.btime  = btime;
+	api->gen.elaps  = (count_t)(etime * hertz);
+
+	api->cpu.utime  = (count_t)(utime * hertz);
+	api->cpu.stime  = (count_t)(stime * hertz);
+
+	api->mem.vmem   = (count_t)mem;
+	api->mem.rmem   = (count_t)mem;
+
+	api->dsk.rio    = (count_t)io;
+
+	/*
+	** ac_comm is not guaranteed to be null-terminated
+	*/
+	snprintf(api->gen.name, sizeof api->gen.name, "%.*s",
+	         (int)commlen, comm);
+}
+#endif
+
+/*
 ** read process-records from the account-file,
 ** which are written since the previous cycle
 */
@@ -597,8 +680,14 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 {
 	register int 		nrexit;
 	register struct tstat 	*api;
+#ifdef FREEBSD
+	struct acctv1		acctrec_v1;
+	struct acctv2		acctrec_v2;
+	struct acctv3		acctrec_v3;
+#else
 	struct acct 		acctrec;
 	struct acct_v3 		acctrec_v3;
+#endif
 	struct acct_atop	acctrec_atop;
 
 	/*
@@ -614,6 +703,35 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 	{
 		switch (acctversion)
 		{
+#ifdef FREEBSD
+		   case 1:
+			if ( read(acctfd, &acctrec_v1, acctrecsz) < acctrecsz )
+				break;	/* unexpected end of account file */
+
+			acctfill_freebsd(api, acctrec_v1.ac_comm,
+			    sizeof acctrec_v1.ac_comm,
+			    (double)acctexp(acctrec_v1.ac_utime) / AHZV1,
+			    (double)acctexp(acctrec_v1.ac_stime) / AHZV1,
+			    (double)acctexp(acctrec_v1.ac_etime) / AHZV1,
+			    acctrec_v1.ac_btime, acctrec_v1.ac_uid,
+			    acctrec_v1.ac_gid, 0.0,
+			    (double)acctexp(acctrec_v1.ac_io));
+			break;
+
+		   case 2:
+			if ( read(acctfd, &acctrec_v2, acctrecsz) < acctrecsz )
+				break;	/* unexpected end of account file */
+
+			acctfill_freebsd(api, acctrec_v2.ac_comm,
+			    sizeof acctrec_v2.ac_comm,
+			    acctrec_v2.ac_utime / 1000000.0,
+			    acctrec_v2.ac_stime / 1000000.0,
+			    acctrec_v2.ac_etime / 1000000.0,
+			    acctrec_v2.ac_btime, acctrec_v2.ac_uid,
+			    acctrec_v2.ac_gid, acctrec_v2.ac_mem,
+			    acctrec_v2.ac_io);
+			break;
+#else
 		   case 2:
 			if ( read(acctfd, &acctrec, acctrecsz) < acctrecsz )
 				break;	/* unexpected end of account file */
@@ -627,7 +745,6 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			api->gen.pid    = 0;
 			api->gen.tgid   = 0;
 			api->gen.ppid   = 0;
-#ifdef linux
 			api->gen.excode = acctrec.ac_exitcode;
 			api->gen.ruid   = acctrec.ac_uid16;
 			api->gen.rgid   = acctrec.ac_gid16;
@@ -636,27 +753,27 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			api->mem.minflt = acctexp(acctrec.ac_minflt);
 			api->mem.majflt = acctexp(acctrec.ac_majflt);
 			api->dsk.rio    = acctexp(acctrec.ac_rw);
-#elif defined(FREEBSD)
-			api->gen.excode = 0;
-			api->gen.ruid   = acctrec.ac_uid;
-			api->gen.rgid   = acctrec.ac_gid;
-			api->cpu.stime  = acctexp(acctrec.ac_stime/10000); // ms
-			api->cpu.utime  = acctexp(acctrec.ac_utime/10000); // ms
-			api->mem.minflt = 0;
-			api->mem.majflt = 0;
-			api->dsk.rio    = 0; // acctrec.ac_io works buggy
-			api->dsk.wio    = 0; 
-#endif
 			api->gen.btime  = acctrec.ac_btime;
 			api->gen.elaps  = acctrec.ac_etime;
 
 			strcpy(api->gen.name, acctrec.ac_comm);
 			break;
+#endif
 
 		   case 3:
 			if ( read(acctfd, &acctrec_v3, acctrecsz) < acctrecsz )
 				break;	/* unexpected end of account file */
 
+#ifdef FREEBSD
+			acctfill_freebsd(api, acctrec_v3.ac_comm,
+			    sizeof acctrec_v3.ac_comm,
+			    acctrec_v3.ac_utime / 1000000.0,
+			    acctrec_v3.ac_stime / 1000000.0,
+			    acctrec_v3.ac_etime / 1000000.0,
+			    acctrec_v3.ac_btime, acctrec_v3.ac_uid,
+			    acctrec_v3.ac_gid, acctrec_v3.ac_mem,
+			    acctrec_v3.ac_io);
+#else
 			/*
 			** fill process info from accounting-record
 			*/
@@ -678,6 +795,7 @@ acctphotoproc(struct tstat *accproc, int nrprocs)
 			api->dsk.rio    = acctexp(acctrec_v3.ac_rw);
 
 			strcpy(api->gen.name, acctrec_v3.ac_comm);
+#endif
 			break;
 
 		   case 6:
